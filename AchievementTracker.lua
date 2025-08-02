@@ -80,27 +80,89 @@ end
 
 -- Parse achievement message from chat
 function AT:ParseAchievementMessage(message, sender)
-    -- Achievement messages contain templates like "%s has earned the achievement [Achievement Name]!"
-    -- The actual player name comes from the sender parameter, not the message
+    -- Debug: show what we're trying to parse
+    if AT.db.settings.enableDebug then
+        print(string.format("|cff00ff00[AT]|r Parsing message: '%s'", message))
+        print(string.format("|cff00ff00[AT]|r From sender: '%s'", sender))
+    end
 
-    -- Look for achievement link patterns in the message
-    local achievementLink = string.match(message, "(%[.-%])")
-
+    -- Look for achievement link patterns - try multiple formats
+    local achievementLink = string.match(message, "(|c.-|r)")
     if not achievementLink then
-        -- Try to find achievement link in different formats
-        achievementLink = string.match(message, "(|c.-|r)")
+        achievementLink = string.match(message, "(%[.-%])")
     end
 
     if achievementLink then
+        if AT.db.settings.enableDebug then
+            print(string.format("|cff00ff00[AT]|r Found link: '%s'", achievementLink))
+        end
+
         -- Extract achievement ID from the link
         local achievementID = string.match(achievementLink, "achievement:(%d+)")
         if achievementID then
             achievementID = tonumber(achievementID)
             local achievementName = string.match(achievementLink, "%[(.+)%]")
 
-            -- Use sender as the player name since message contains %s template
+            if AT.db.settings.enableDebug then
+                print(string.format("|cff00ff00[AT]|r Extracted ID: %d, Name: '%s'", achievementID, achievementName or "nil"))
+            end
+
             return sender, achievementID, achievementName
+        else
+            -- No achievement ID found in link, try name lookup
+            local achievementName = string.match(achievementLink, "%[(.+)%]")
+            if achievementName then
+                if AT.db.settings.enableDebug then
+                    print(string.format("|cff00ff00[AT]|r No ID in link, trying name lookup for: '%s'", achievementName))
+                end
+                local achievementID = AT:FindAchievementIDByName(achievementName)
+                if achievementID then
+                    return sender, achievementID, achievementName
+                end
+            end
         end
+    end
+
+    if AT.db.settings.enableDebug then
+        print("|cffff0000[AT]|r Failed to parse achievement message")
+    end
+
+    return nil
+end
+
+-- Cache for achievement name -> ID lookups
+AT.achievementNameCache = AT.achievementNameCache or {}
+
+-- Find achievement ID by name (expensive operation, cached)
+function AT:FindAchievementIDByName(targetName)
+    -- Check cache first
+    if AT.achievementNameCache[targetName] then
+        return AT.achievementNameCache[targetName]
+    end
+
+    if AT.db.settings.enableDebug then
+        print(string.format("|cff00ff00[AT]|r Searching for achievement: '%s'", targetName))
+    end
+
+    -- Search through achievement categories to find matching name
+    local categories = GetCategoryList()
+    for _, categoryID in ipairs(categories) do
+        local achievements = GetCategoryAchievementList(categoryID)
+        for _, achievementID in ipairs(achievements) do
+            local _, name = GetAchievementInfo(achievementID)
+            if name and name == targetName then
+                -- Cache the result
+                AT.achievementNameCache[targetName] = achievementID
+                if AT.db.settings.enableDebug then
+                    print(string.format("|cff00ff00[AT]|r Found achievement ID %d for '%s'", achievementID, targetName))
+                end
+                return achievementID
+            end
+        end
+    end
+
+    if AT.db.settings.enableDebug then
+        print(string.format("|cffff0000[AT]|r Could not find achievement ID for '%s'", targetName))
     end
 
     return nil
