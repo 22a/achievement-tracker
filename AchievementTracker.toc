@@ -1,9 +1,12 @@
-## Interface: 110002
+## Interface: 110107
 ## Title: Achievement Tracker
-## Notes: Tracks achievements earned by party/raid members from chat messages
-## Author: YourName
-## Version: 1.0.0
+## Notes: Tracks achievements earned by party/raid members from chat messages for long-term analysis
+## Author: 22a
+## Version: 0.0.1
 ## SavedVariables: AchievementTrackerDB
 ## DefaultState: enabled
+## X-Category: Achievements
+## X-Website: https://github.com/22a/achievement-tracker
+## X-Curse-Project-ID: 1319457
 
 AchievementTracker.lua
