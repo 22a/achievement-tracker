@@ -13,7 +13,6 @@ local defaultDB = {
     achievements = {}, -- [achievementID] = count (simple counter)
     settings = {
         enableDebug = false,
-        trackedAchievements = {}, -- specific achievement IDs to track (empty = track all)
         activeAchievementID = 41298, -- Ahead of the Curve: Chrome King Gallywix
         displayPrefix = "AotC this season", -- Customizable prefix for display
         fontSize = 12, -- Font size for display frame
@@ -36,14 +35,14 @@ function AT:Initialize()
     if not AchievementTrackerDB then
         AchievementTrackerDB = {}
     end
-    
+
     -- Merge with defaults
     for key, value in pairs(defaultDB) do
         if AchievementTrackerDB[key] == nil then
             AchievementTrackerDB[key] = value
         end
     end
-    
+
     AT.db = AchievementTrackerDB
 
     if AT.db.settings.enableDebug then
@@ -164,17 +163,13 @@ end
 
 -- Check if we should track this achievement
 function AT:ShouldTrackAchievement(achievementID)
-    if #AT.db.settings.trackedAchievements == 0 then
-        return true -- Track all achievements if no specific ones are set
+    -- Always track the active achievement
+    if achievementID == AT.db.settings.activeAchievementID then
+        return true
     end
 
-    for _, id in ipairs(AT.db.settings.trackedAchievements) do
-        if id == achievementID then
-            return true
-        end
-    end
-
-    return false
+    -- Also track any achievement that's already in our database (previously tracked)
+    return AT.db.achievements[achievementID] ~= nil
 end
 
 -- Record achievement
@@ -275,15 +270,16 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
     if command == "show" then
         print("|cff00ff00[AT Debug]|r Received 'show' command")
     end
-    
+
     if command == "help" then
         print("|cff00ff00Achievement Tracker Commands:|r")
         print("|cffff0000/at stats|r - Show overall achievement stats")
         print("|cffff0000/at debug|r - Toggle debug mode")
         print("|cffff0000/at track <achievementID>|r - Add/remove tracked achievement")
         print("|cffff0000/at config|r - Open settings panel")
-
         print("|cffff0000/at list|r - Show currently tracked achievements")
+
+
         print("|cffff0000/at active <achievementID>|r - Set active achievement for display")
         print("|cffff0000/at show|r - Show/hide the display frame")
         print("|cffff0000/at reset|r - Reset display frame position")
@@ -304,6 +300,9 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
             print("|cffff0000Usage:|r /at track <achievementID>")
         end
 
+    elseif command == "list" then
+        AT:ShowTrackedAchievements()
+
     elseif command == "config" then
         -- Open the settings panel
         if Settings and Settings.OpenToCategory then
@@ -316,8 +315,7 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
 
 
 
-    elseif command == "list" then
-        AT:ShowTrackedAchievements()
+
 
     elseif command == "active" then
         local achievementID = tonumber(args[2])
@@ -371,65 +369,53 @@ function AT:ShowOverallStats()
         print(string.format("  [%d] %s: %d times%s", achievement.id, achievementName, achievement.count, activeMarker))
     end
 end
-
+-- Toggle tracked achievement (using achievements object as source of truth)
 function AT:ToggleTrackedAchievement(achievementID)
-    local tracked = AT.db.settings.trackedAchievements
-    local found = false
-
-    for i, id in ipairs(tracked) do
-        if id == achievementID then
-            table.remove(tracked, i)
-            found = true
-            break
+    if AT.db.achievements[achievementID] then
+        -- Remove from tracking
+        AT.db.achievements[achievementID] = nil
+        if AT.db.settings.enableDebug then
+            local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+            print(string.format("|cff00ff00[AT]|r Removed achievement %d (%s) from tracking", achievementID, achievementName))
         end
-    end
-
-    if not found then
-        table.insert(tracked, achievementID)
-    end
-
-    if AT.db.settings.enableDebug then
-        local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
-
-        if not found then
-            print(string.format("|cff00ff00[AT]|r Added achievement %d (%s) to tracking list", achievementID, achievementName))
-        else
-            print(string.format("|cff00ff00[AT]|r Removed achievement %d (%s) from tracking list", achievementID, achievementName))
-        end
-
-        -- Show current tracking status
-        if #tracked == 0 then
-            print("|cff00ff00[AT]|r Now tracking ALL achievements")
-        else
-            print(string.format("|cff00ff00[AT]|r Now tracking %d specific achievements", #tracked))
+    else
+        -- Add to tracking with 0 count
+        AT.db.achievements[achievementID] = 0
+        if AT.db.settings.enableDebug then
+            local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+            print(string.format("|cff00ff00[AT]|r Added achievement %d (%s) to tracking", achievementID, achievementName))
         end
     end
 end
 
+-- Show tracked achievements
 function AT:ShowTrackedAchievements()
-    local tracked = AT.db.settings.trackedAchievements
     local activeID = AT.db.settings.activeAchievementID
+    local count = 0
 
-    if #tracked == 0 then
-        print("|cff00ff00[AT]|r Currently tracking ALL achievements")
-    else
-        print(string.format("|cff00ff00[AT]|r Currently tracking %d specific achievements:", #tracked))
-        for _, achievementID in ipairs(tracked) do
-            local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
-            local activeMarker = (achievementID == activeID) and " |cffff8000[ACTIVE]|r" or ""
-            print(string.format("  [%d] %s%s", achievementID, achievementName, activeMarker))
-        end
+    print("|cff00ff00[AT]|r Currently tracked achievements:")
+    for achievementID, achievementCount in pairs(AT.db.achievements) do
+        local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+        local activeMarker = (achievementID == activeID) and " |cffff8000[ACTIVE]|r" or ""
+        print(string.format("  [%d] %s: %d times%s", achievementID, achievementName, achievementCount, activeMarker))
+        count = count + 1
+    end
+
+    if count == 0 then
+        print("|cff00ff00[AT]|r No achievements currently tracked")
     end
 
     -- Show active achievement info
     if activeID then
         local activeName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
-        local count = AT.db.achievements[activeID] or 0
-        print(string.format("|cff00ff00[AT]|r Active display: [%d] %s (%d times)", activeID, activeName, count))
+        local activeCount = AT.db.achievements[activeID] or 0
+        print(string.format("|cff00ff00[AT]|r Active display: [%d] %s (%d times)", activeID, activeName, activeCount))
     else
         print("|cff00ff00[AT]|r No active achievement set for display")
     end
 end
+
+
 
 
 
@@ -579,9 +565,111 @@ function AT:CreateSettingsPanel()
         AT:UpdateDisplayFrame()
     end)
 
+    -- Achievement Management section
+    local achievementLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    achievementLabel:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, -50)
+    achievementLabel:SetText("Achievement Management:")
+
+    -- Add achievement input
+    local addLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    addLabel:SetPoint("TOPLEFT", achievementLabel, "BOTTOMLEFT", 0, -10)
+    addLabel:SetText("Add Achievement ID:")
+
+    local addInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    addInput:SetSize(100, 20)
+    addInput:SetPoint("TOPLEFT", addLabel, "BOTTOMLEFT", 0, -5)
+    addInput:SetAutoFocus(false)
+    addInput:SetNumeric(true)
+
+    local addButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    addButton:SetSize(60, 22)
+    addButton:SetPoint("LEFT", addInput, "RIGHT", 10, 0)
+    addButton:SetText("Add")
+    addButton:SetScript("OnClick", function()
+        local achievementID = tonumber(addInput:GetText())
+        if achievementID then
+            AT:ToggleTrackedAchievement(achievementID)
+            addInput:SetText("")
+            UpdateStats() -- Refresh the display
+        end
+    end)
+
+    -- Tracked achievements list with active selection
+    local trackedLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    trackedLabel:SetPoint("TOPLEFT", addInput, "BOTTOMLEFT", 0, -20)
+    trackedLabel:SetText("Currently Tracked:")
+
+    -- Scrollable list for tracked achievements
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetSize(300, 120)
+    scrollFrame:SetPoint("TOPLEFT", trackedLabel, "BOTTOMLEFT", 0, -5)
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(280, 1)
+    scrollFrame:SetScrollChild(scrollChild)
+
+    -- Function to update the tracked achievements list
+    local function UpdateTrackedList()
+        -- Clear existing children
+        for i = 1, scrollChild:GetNumChildren() do
+            local child = select(i, scrollChild:GetChildren())
+            child:Hide()
+            child:SetParent(nil)
+        end
+
+        local yOffset = 0
+        local activeID = AT.db.settings.activeAchievementID
+
+        for achievementID, count in pairs(AT.db.achievements) do
+            local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+
+            -- Achievement frame
+            local achievementFrame = CreateFrame("Frame", nil, scrollChild)
+            achievementFrame:SetSize(280, 25)
+            achievementFrame:SetPoint("TOPLEFT", 0, -yOffset)
+
+            -- Achievement text
+            local achievementText = achievementFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            achievementText:SetPoint("LEFT", 5, 0)
+            achievementText:SetSize(180, 20)
+            achievementText:SetJustifyH("LEFT")
+            local isActive = (achievementID == activeID)
+            local color = isActive and "|cffff8000" or "|cffffffff"
+            local activeMarker = isActive and " [ACTIVE]" or ""
+            achievementText:SetText(string.format("%s[%d] %s: %d%s|r", color, achievementID, achievementName, count, activeMarker))
+
+            -- Set Active button
+            local setActiveButton = CreateFrame("Button", nil, achievementFrame, "UIPanelButtonTemplate")
+            setActiveButton:SetSize(60, 20)
+            setActiveButton:SetPoint("RIGHT", -70, 0)
+            setActiveButton:SetText(isActive and "Active" or "Set Active")
+            setActiveButton:SetEnabled(not isActive)
+            setActiveButton:SetScript("OnClick", function()
+                AT:SetActiveAchievement(achievementID)
+                UpdateTrackedList() -- Refresh the list
+                AT:UpdateDisplayFrame() -- Update the display
+            end)
+
+            -- Remove button
+            local removeButton = CreateFrame("Button", nil, achievementFrame, "UIPanelButtonTemplate")
+            removeButton:SetSize(60, 20)
+            removeButton:SetPoint("RIGHT", -5, 0)
+            removeButton:SetText("Remove")
+            removeButton:SetScript("OnClick", function()
+                AT:ToggleTrackedAchievement(achievementID)
+                UpdateTrackedList() -- Refresh the list
+                UpdateStats() -- Refresh stats
+            end)
+
+            yOffset = yOffset + 25
+        end
+
+        scrollChild:SetHeight(math.max(yOffset, 1))
+    end
+
     -- Clear data section
     local clearLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    clearLabel:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, -50)
+    clearLabel:SetPoint("TOPLEFT", scrollFrame, "BOTTOMLEFT", 0, -30)
     clearLabel:SetText("Danger Zone:")
 
     local clearWarning = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -630,8 +718,12 @@ function AT:CreateSettingsPanel()
     panel:SetScript("OnShow", function()
         UpdateStats()
         UpdatePrefixInput() -- Update the prefix input field
+        UpdateTrackedList() -- Update the tracked achievements list
         -- Set up auto-refresh timer
-        panel.refreshTimer = C_Timer.NewTicker(2, UpdateStats) -- Update every 2 seconds
+        panel.refreshTimer = C_Timer.NewTicker(2, function()
+            UpdateStats()
+            UpdateTrackedList()
+        end) -- Update every 2 seconds
     end)
 
     -- Clean up timer when panel is hidden
