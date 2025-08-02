@@ -16,6 +16,8 @@ local defaultDB = {
         enableDebug = false,
         trackedAchievements = {}, -- specific achievement IDs to track (empty = track all)
         activeAchievementID = 41298, -- Ahead of the Curve: Chrome King Gallywix
+        displayPrefix = "AotC this season", -- Customizable prefix for display
+        fontSize = 12, -- Font size for display frame
         displayFrame = {
             x = 100,
             y = -100,
@@ -646,9 +648,82 @@ function AT:CreateSettingsPanel()
         statsText:SetText(table.concat(statsLines, "\n"))
     end
 
+    -- Display prefix settings
+    local prefixLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    prefixLabel:SetPoint("TOPLEFT", statsText, "BOTTOMLEFT", 0, -30)
+    prefixLabel:SetText("Display Text Prefix:")
+
+    -- Input field for prefix
+    local prefixInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    prefixInput:SetSize(200, 20)
+    prefixInput:SetPoint("TOPLEFT", prefixLabel, "BOTTOMLEFT", 0, -5)
+    prefixInput:SetAutoFocus(false)
+    prefixInput:SetText(AT.db.settings.displayPrefix or "AotC this season")
+
+    -- Save button
+    local saveButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    saveButton:SetSize(60, 22)
+    saveButton:SetPoint("LEFT", prefixInput, "RIGHT", 10, 0)
+    saveButton:SetText("Save")
+    saveButton:SetScript("OnClick", function()
+        local newPrefix = prefixInput:GetText()
+        if newPrefix and newPrefix ~= "" then
+            AT.db.settings.displayPrefix = newPrefix
+            AT:UpdateDisplayFrame()
+            print(string.format("|cff00ff00[AT]|r Display prefix updated to: '%s'", newPrefix))
+        end
+    end)
+
+    -- Reset button
+    local resetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetButton:SetSize(60, 22)
+    resetButton:SetPoint("LEFT", saveButton, "RIGHT", 5, 0)
+    resetButton:SetText("Reset")
+    resetButton:SetScript("OnClick", function()
+        AT.db.settings.displayPrefix = "AotC this season"
+        prefixInput:SetText("AotC this season")
+        AT:UpdateDisplayFrame()
+        print("|cff00ff00[AT]|r Display prefix reset to default")
+    end)
+
+    -- Font size settings
+    local fontLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    fontLabel:SetPoint("TOPLEFT", prefixInput, "BOTTOMLEFT", 0, -30)
+    fontLabel:SetText("Font Size:")
+
+    -- Font size slider
+    local fontSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    fontSlider:SetSize(200, 20)
+    fontSlider:SetPoint("TOPLEFT", fontLabel, "BOTTOMLEFT", 0, -10)
+    fontSlider:SetMinMaxValues(8, 24)
+    fontSlider:SetValue(AT.db.settings.fontSize or 12)
+    fontSlider:SetValueStep(1)
+    fontSlider:SetObeyStepOnDrag(true)
+
+    -- Slider labels
+    fontSlider.Low = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    fontSlider.Low:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, 3)
+    fontSlider.Low:SetText("8")
+
+    fontSlider.High = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    fontSlider.High:SetPoint("TOPRIGHT", fontSlider, "BOTTOMRIGHT", 0, 3)
+    fontSlider.High:SetText("24")
+
+    fontSlider.Text = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    fontSlider.Text:SetPoint("TOP", fontSlider, "BOTTOM", 0, -15)
+    fontSlider.Text:SetText("Size: " .. (AT.db.settings.fontSize or 12))
+
+    -- Slider event handler
+    fontSlider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value + 0.5) -- Round to nearest integer
+        AT.db.settings.fontSize = value
+        fontSlider.Text:SetText("Size: " .. value)
+        AT:UpdateDisplayFrame()
+    end)
+
     -- Clear data section
     local clearLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    clearLabel:SetPoint("TOPLEFT", statsText, "BOTTOMLEFT", 0, -30)
+    clearLabel:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, -50)
     clearLabel:SetText("Danger Zone:")
 
     local clearWarning = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -809,10 +884,15 @@ function AT:UpdateDisplayFrame()
     end
 
     local count = AT.db.achievements[activeID] or 0
-    local achievementName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
+    local prefix = AT.db.settings.displayPrefix or "AotC this season"
+    local fontSize = AT.db.settings.fontSize or 12
 
-    -- Format the display text
-    AT.displayFrame.text:SetText(string.format("%s: %d", achievementName, count))
+    -- Update font size
+    local fontPath, _, fontFlags = AT.displayFrame.text:GetFont()
+    AT.displayFrame.text:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
+
+    -- Format the display text with custom prefix
+    AT.displayFrame.text:SetText(string.format("%s: %d", prefix, count))
 end
 
 -- Set the active achievement for display
