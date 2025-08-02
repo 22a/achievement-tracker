@@ -47,29 +47,29 @@ end
 
 -- Parse achievement message from chat
 function AT:ParseAchievementMessage(message, sender)
-    -- Achievement messages typically look like:
-    -- "PlayerName has earned the achievement [Achievement Name]!"
-    -- or variations depending on locale
-    
-    local playerName, achievementLink = string.match(message, "(.+) has earned the achievement (.+)!")
-    
-    if not playerName then
-        -- Try alternative patterns for different locales or message formats
-        playerName, achievementLink = string.match(message, "(.+) a obtenu le haut%-fait (.+)!") -- French
-        -- Add more patterns as needed for other locales
+    -- Achievement messages contain templates like "%s has earned the achievement [Achievement Name]!"
+    -- The actual player name comes from the sender parameter, not the message
+
+    -- Look for achievement link patterns in the message
+    local achievementLink = string.match(message, "(%[.-%])")
+
+    if not achievementLink then
+        -- Try to find achievement link in different formats
+        achievementLink = string.match(message, "(|c.-|r)")
     end
-    
-    if playerName and achievementLink then
+
+    if achievementLink then
         -- Extract achievement ID from the link
         local achievementID = string.match(achievementLink, "achievement:(%d+)")
         if achievementID then
             achievementID = tonumber(achievementID)
             local achievementName = string.match(achievementLink, "%[(.+)%]")
-            
-            return playerName, achievementID, achievementName
+
+            -- Use sender as the player name since message contains %s template
+            return sender, achievementID, achievementName
         end
     end
-    
+
     return nil
 end
 
