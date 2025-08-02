@@ -4,6 +4,9 @@
 local AT = {}
 AchievementTracker = AT
 
+-- Constants
+local DEFAULT_PREFIX = "AotC this season"
+
 -- Addon event frame
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
@@ -11,16 +14,19 @@ frame:RegisterEvent("CHAT_MSG_ACHIEVEMENT")
 
 -- Default database structure
 local defaultDB = {
-    achievements = {}, -- [achievementID] = count (simple counter)
+    achievements = {
+        41298 = 0, -- Ahead of the Curve: Chrome King Gallywix
+    }, -- [achievementID] = count (simple counter)
     settings = {
         enableDebug = false,
         activeAchievementID = 41298, -- Ahead of the Curve: Chrome King Gallywix
-        displayPrefix = "AotC this season", -- Customizable prefix for display
-        fontSize = 12, -- Font size for display frame
         displayFrame = {
             x = 100,
             y = -100,
             visible = true,
+            displayPrefix = DEFAULT_PREFIX, -- Customizable prefix for display
+            fontSize = 12, -- Font size for display frame
+            enabled = true, -- Whether to show the display frame at all
         }
     }
 }
@@ -206,9 +212,32 @@ function AT:CreateSettingsPanel()
     displayLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -30)
     displayLabel:SetText("Display Frame Settings:")
 
+    -- Enable Display Frame setting
+    local enableCheckbox = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    enableCheckbox:SetSize(20, 20)
+    enableCheckbox:SetPoint("TOPLEFT", displayLabel, "BOTTOMLEFT", 10, -10)
+    enableCheckbox:SetChecked(AT.db.settings.displayFrame.enabled)
+
+    local enableLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    enableLabel:SetPoint("LEFT", enableCheckbox, "RIGHT", 5, 0)
+    enableLabel:SetText("Show Display Frame")
+
+    enableCheckbox:SetScript("OnClick", function()
+        AT.db.settings.displayFrame.enabled = enableCheckbox:GetChecked()
+        if AT.db.settings.displayFrame.enabled then
+            AT:CreateDisplayFrame()
+            print("|cff00ff00[AT]|r Display frame enabled")
+        else
+            if AT.displayFrame then
+                AT.displayFrame:Hide()
+            end
+            print("|cff00ff00[AT]|r Display frame disabled")
+        end
+    end)
+
     -- Display Prefix setting
     local prefixLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    prefixLabel:SetPoint("TOPLEFT", displayLabel, "BOTTOMLEFT", 10, -10)
+    prefixLabel:SetPoint("TOPLEFT", enableCheckbox, "BOTTOMLEFT", 0, -20)
     prefixLabel:SetText("Display Text Prefix:")
 
     local prefixHelp = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -220,7 +249,7 @@ function AT:CreateSettingsPanel()
     prefixInput:SetSize(150, 20)
     prefixInput:SetPoint("TOPLEFT", prefixHelp, "BOTTOMLEFT", 0, -5)
     prefixInput:SetAutoFocus(false)
-    prefixInput:SetText(AT.db.settings.displayPrefix or "AotC this season")
+    prefixInput:SetText(AT.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX)
 
     local prefixSaveButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     prefixSaveButton:SetSize(50, 22)
@@ -229,7 +258,7 @@ function AT:CreateSettingsPanel()
     prefixSaveButton:SetScript("OnClick", function()
         local newPrefix = prefixInput:GetText()
         if newPrefix and newPrefix ~= "" then
-            AT.db.settings.displayPrefix = newPrefix
+            AT.db.settings.displayFrame.displayPrefix = newPrefix
             AT:UpdateDisplayFrame()
             print("|cff00ff00[AT]|r Display prefix updated to: '" .. newPrefix .. "'")
         else
@@ -242,10 +271,10 @@ function AT:CreateSettingsPanel()
     prefixResetButton:SetPoint("LEFT", prefixSaveButton, "RIGHT", 5, 0)
     prefixResetButton:SetText("Reset")
     prefixResetButton:SetScript("OnClick", function()
-        AT.db.settings.displayPrefix = "AotC this season"
-        prefixInput:SetText("AotC this season")
+        AT.db.settings.displayFrame.displayPrefix = DEFAULT_PREFIX
+        prefixInput:SetText(DEFAULT_PREFIX)
         AT:UpdateDisplayFrame()
-        print("|cff00ff00[AT]|r Display prefix reset to default: 'AotC this season'")
+        print("|cff00ff00[AT]|r Display prefix reset to default: '" .. DEFAULT_PREFIX .. "'")
     end)
 
     -- Font Size setting
@@ -257,7 +286,7 @@ function AT:CreateSettingsPanel()
     fontSlider:SetSize(150, 20)
     fontSlider:SetPoint("LEFT", fontLabel, "RIGHT", 10, 0)
     fontSlider:SetMinMaxValues(8, 24)
-    fontSlider:SetValue(AT.db.settings.fontSize or 12)
+    fontSlider:SetValue(AT.db.settings.displayFrame.fontSize or 12)
     fontSlider:SetValueStep(1)
     fontSlider:SetObeyStepOnDrag(true)
 
@@ -272,11 +301,11 @@ function AT:CreateSettingsPanel()
 
     fontSlider.Text = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     fontSlider.Text:SetPoint("LEFT", fontSlider, "RIGHT", 10, 0)
-    fontSlider.Text:SetText("Size: " .. (AT.db.settings.fontSize or 12))
+    fontSlider.Text:SetText("Size: " .. (AT.db.settings.displayFrame.fontSize or 12))
 
     fontSlider:SetScript("OnValueChanged", function(self, value)
         value = math.floor(value + 0.5)
-        AT.db.settings.fontSize = value
+        AT.db.settings.displayFrame.fontSize = value
         fontSlider.Text:SetText("Size: " .. value)
         AT:UpdateDisplayFrame()
     end)
@@ -503,9 +532,10 @@ function AT:CreateSettingsPanel()
 
     -- Function to update all settings values
     local function UpdateSettingsValues()
-        prefixInput:SetText(AT.db.settings.displayPrefix or "AotC this season")
-        fontSlider:SetValue(AT.db.settings.fontSize or 12)
-        fontSlider.Text:SetText("Size: " .. (AT.db.settings.fontSize or 12))
+        enableCheckbox:SetChecked(AT.db.settings.displayFrame.enabled)
+        prefixInput:SetText(AT.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX)
+        fontSlider:SetValue(AT.db.settings.displayFrame.fontSize or 12)
+        fontSlider.Text:SetText("Size: " .. (AT.db.settings.displayFrame.fontSize or 12))
         debugCheckbox:SetChecked(AT.db.settings.enableDebug)
     end
 
@@ -527,6 +557,11 @@ end
 -- Create display frame
 function AT:CreateDisplayFrame()
     if AT.displayFrame then
+        return
+    end
+
+    -- Don't create if disabled
+    if not AT.db.settings.displayFrame.enabled then
         return
     end
 
@@ -593,7 +628,7 @@ end
 
 -- Update display frame text
 function AT:UpdateDisplayFrame()
-    if not AT.displayFrame then
+    if not AT.displayFrame or not AT.db.settings.displayFrame.enabled then
         return
     end
 
@@ -604,8 +639,8 @@ function AT:UpdateDisplayFrame()
     end
 
     local count = AT.db.achievements[activeID] or 0
-    local prefix = AT.db.settings.displayPrefix or "AotC this season"
-    local fontSize = AT.db.settings.fontSize or 12
+    local prefix = AT.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
+    local fontSize = AT.db.settings.displayFrame.fontSize or 12
 
     -- Update font size
     local fontPath, _, fontFlags = AT.displayFrame.text:GetFont()
@@ -621,29 +656,4 @@ function AT:UpdateDisplayFrame()
     local frameWidth = math.max(textWidth + 20, 80)
     local frameHeight = math.max(textHeight + 12, 20)
     AT.displayFrame:SetSize(frameWidth, frameHeight)
-end
-
--- Toggle display frame visibility
-function AT:ToggleDisplayFrame()
-    if not AT.displayFrame then
-        AT:CreateDisplayFrame()
-        return
-    end
-
-    if AT.displayFrame:IsShown() then
-        AT.displayFrame:Hide()
-        AT.db.settings.displayFrame.visible = false
-    else
-        AT.displayFrame:Show()
-        AT.db.settings.displayFrame.visible = true
-    end
-end
-
--- Reset display frame position
-function AT:ResetDisplayFramePosition()
-    AT.db.settings.displayFrame.x = 100
-    AT.db.settings.displayFrame.y = -100
-    if AT.displayFrame then
-        AT.displayFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 100, -100)
-    end
 end
