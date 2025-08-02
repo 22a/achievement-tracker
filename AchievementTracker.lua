@@ -399,10 +399,15 @@ function AT:ShowOverallStats()
         totalCount = totalCount + count
     end
 
-    print(string.format("|cff00ff00[AT] Overall Stats:|r %d unique achievements, %d total count",
+    if totalAchievements == 0 then
+        print("|cff00ff00[AT]|r No achievements recorded yet.")
+        return
+    end
+
+    print(string.format("|cff00ff00[AT]|r Achievement Statistics (%d achievements, %d total):",
           totalAchievements, totalCount))
 
-    -- Show breakdown by achievement
+    -- Show breakdown by achievement (sorted by count, highest first)
     local sortedAchievements = {}
     for achievementID, count in pairs(AT.db.achievements) do
         table.insert(sortedAchievements, {id = achievementID, count = count})
@@ -537,18 +542,17 @@ function AT:CreateSettingsPanel()
         local totalCount = 0
         local statsLines = {}
 
-        -- Overall stats
+        -- Calculate totals
         for achievementID, count in pairs(AT.db.achievements) do
             totalAchievements = totalAchievements + 1
             totalCount = totalCount + count
         end
 
-        table.insert(statsLines, string.format("Overall: %d achievements, %d total count", totalAchievements, totalCount))
-        table.insert(statsLines, "")
-
-        -- Individual achievement stats
-        if totalAchievements > 0 then
-            table.insert(statsLines, "Individual Achievement Counts:")
+        if totalAchievements == 0 then
+            table.insert(statsLines, "No achievements recorded yet.")
+        else
+            table.insert(statsLines, string.format("Achievement Statistics (%d achievements, %d total):", totalAchievements, totalCount))
+            table.insert(statsLines, "")
 
             -- Sort achievements by count (highest first)
             local sortedAchievements = {}
@@ -560,11 +564,9 @@ function AT:CreateSettingsPanel()
 
             for _, achievement in ipairs(sortedAchievements) do
                 local achievementName = select(2, GetAchievementInfo(achievement.id)) or "Unknown"
-                table.insert(statsLines, string.format("  [%d] %s: %d times",
+                table.insert(statsLines, string.format("[%d] %s: %d times",
                     achievement.id, achievementName, achievement.count))
             end
-        else
-            table.insert(statsLines, "No achievements tracked yet.")
         end
 
         statsText:SetText(table.concat(statsLines, "\n"))
