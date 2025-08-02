@@ -15,6 +15,12 @@ local defaultDB = {
     settings = {
         enableDebug = false,
         trackedAchievements = {}, -- specific achievement IDs to track (empty = track all)
+        activeAchievementID = 41298, -- Ahead of the Curve: Chrome King Gallywix
+        displayFrame = {
+            x = 100,
+            y = -100,
+            visible = true,
+        }
     }
 }
 
@@ -46,6 +52,9 @@ function AT:Initialize()
 
     -- Create settings panel
     AT:CreateSettingsPanel()
+
+    -- Create display frame
+    AT:CreateDisplayFrame()
 end
 
 -- Migrate old data format to new format
@@ -230,6 +239,11 @@ function AT:RecordAchievement(playerName, achievementID, achievementName)
         print(string.format("|cff00ff00[AT]|r Recorded: %s earned [%s] (ID: %d) - Total count: %d",
               playerName, achievementName, achievementID, AT.db.achievements[achievementID]))
     end
+
+    -- Update display frame if this is the active achievement
+    if AT.db.settings.activeAchievementID == achievementID then
+        AT:UpdateDisplayFrame()
+    end
 end
 
 -- Try to get a player's server name
@@ -365,6 +379,9 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
         print("|cffff0000/at config|r - Open settings panel")
         print("|cffff0000/at rawdata [count]|r - Show recent raw achievement data")
         print("|cffff0000/at list|r - Show currently tracked achievements")
+        print("|cffff0000/at active <achievementID>|r - Set active achievement for display")
+        print("|cffff0000/at show|r - Show/hide the display frame")
+        print("|cffff0000/at reset|r - Reset display frame position")
 
     elseif command == "stats" then
         AT:ShowOverallStats()
@@ -398,6 +415,20 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
 
     elseif command == "list" then
         AT:ShowTrackedAchievements()
+
+    elseif command == "active" then
+        local achievementID = tonumber(args[2])
+        if achievementID then
+            AT:SetActiveAchievement(achievementID)
+        else
+            print("|cffff0000Usage:|r /at active <achievementID>")
+        end
+
+    elseif command == "show" then
+        AT:ToggleDisplayFrame()
+
+    elseif command == "reset" then
+        AT:ResetDisplayFrame()
 
     else
         print("|cffff0000Unknown command.|r Type |cffff0000/at help|r for help.")
@@ -656,4 +687,120 @@ function AT:CreateSettingsPanel()
         -- Old Interface Options API (pre-11.0)
         InterfaceOptions_AddCategory(panel)
     end
+end
+
+-- Create the on-screen display frame
+function AT:CreateDisplayFrame()
+    if AT.displayFrame then
+        return -- Already created
+    end
+
+    local frame = CreateFrame("Frame", "AchievementTrackerDisplay", UIParent)
+    frame:SetSize(200, 30)
+    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", AT.db.settings.displayFrame.x, AT.db.settings.displayFrame.y)
+
+    -- Background
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.7)
+    frame.bg = bg
+
+    -- Text
+    local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetPoint("CENTER")
+    text:SetTextColor(1, 1, 1, 1)
+    frame.text = text
+
+    -- Make it movable (only when holding Shift)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        if IsShiftKeyDown() then
+            self:StartMoving()
+        end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        -- Save position
+        local point, _, _, x, y = self:GetPoint()
+        AT.db.settings.displayFrame.x = x
+        AT.db.settings.displayFrame.y = y
+    end)
+
+    -- Add tooltip to show how to move it
+    frame:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Achievement Tracker", 1, 1, 1)
+        GameTooltip:AddLine("Hold Shift + Drag to move", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
+    -- Show/hide based on settings
+    if AT.db.settings.displayFrame.visible then
+        frame:Show()
+    else
+        frame:Hide()
+    end
+
+    AT.displayFrame = frame
+    AT:UpdateDisplayFrame()
+end
+
+-- Update the display frame text
+function AT:UpdateDisplayFrame()
+    if not AT.displayFrame then
+        return
+    end
+
+    local activeID = AT.db.settings.activeAchievementID
+    if not activeID then
+        AT.displayFrame.text:SetText("No active achievement set")
+        return
+    end
+
+    local count = AT.db.achievements[activeID] or 0
+    local achievementName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
+
+    -- Format the display text
+    AT.displayFrame.text:SetText(string.format("%s: %d", achievementName, count))
+end
+
+-- Set the active achievement for display
+function AT:SetActiveAchievement(achievementID)
+    AT.db.settings.activeAchievementID = achievementID
+    local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+    print(string.format("|cff00ff00[AT]|r Set active achievement: [%d] %s", achievementID, achievementName))
+    AT:UpdateDisplayFrame()
+end
+
+-- Toggle display frame visibility
+function AT:ToggleDisplayFrame()
+    if not AT.displayFrame then
+        AT:CreateDisplayFrame()
+        return
+    end
+
+    if AT.displayFrame:IsShown() then
+        AT.displayFrame:Hide()
+        AT.db.settings.displayFrame.visible = false
+        print("|cff00ff00[AT]|r Display frame hidden")
+    else
+        AT.displayFrame:Show()
+        AT.db.settings.displayFrame.visible = true
+        print("|cff00ff00[AT]|r Display frame shown")
+    end
+end
+
+-- Reset display frame position
+function AT:ResetDisplayFrame()
+    AT.db.settings.displayFrame.x = 100
+    AT.db.settings.displayFrame.y = -100
+    if AT.displayFrame then
+        AT.displayFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 100, -100)
+    end
+    print("|cff00ff00[AT]|r Display frame position reset")
 end
