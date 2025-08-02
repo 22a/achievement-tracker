@@ -256,7 +256,7 @@ function AT:SetActiveAchievement(achievementID)
     print(string.format("|cff00ff00[AT]|r Set active achievement: [%d] %s", achievementID, achievementName))
     AT:UpdateDisplayFrame()
 end
--- Create simple settings panel
+-- Create settings panel
 function AT:CreateSettingsPanel()
     local panel = CreateFrame("Frame", "AchievementTrackerSettingsPanel", UIParent)
     panel.name = "Achievement Tracker"
@@ -266,10 +266,191 @@ function AT:CreateSettingsPanel()
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("Achievement Tracker Settings")
 
-    -- Simple message for now
-    local message = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    message:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -20)
-    message:SetText("Use /at commands to manage achievements.\nSettings panel will be improved in future versions.")
+    -- Add Achievement section
+    local addLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    addLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -30)
+    addLabel:SetText("Add Achievement to Track:")
+
+    -- Input box for achievement ID
+    local addInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    addInput:SetSize(120, 20)
+    addInput:SetPoint("TOPLEFT", addLabel, "BOTTOMLEFT", 0, -5)
+    addInput:SetAutoFocus(false)
+    addInput:SetNumeric(true)
+
+    -- Add button
+    local addButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    addButton:SetSize(80, 22)
+    addButton:SetPoint("LEFT", addInput, "RIGHT", 10, 0)
+    addButton:SetText("Add")
+
+    -- Tracked achievements table header
+    local tableLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    tableLabel:SetPoint("TOPLEFT", addInput, "BOTTOMLEFT", 0, -30)
+    tableLabel:SetText("Tracked Achievements:")
+
+    -- Create scroll frame for the table
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetSize(500, 300)
+    scrollFrame:SetPoint("TOPLEFT", tableLabel, "BOTTOMLEFT", 0, -10)
+
+    -- Create scroll child
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(480, 1) -- Height will be set dynamically
+    scrollFrame:SetScrollChild(scrollChild)
+
+    -- Function to update the achievements table
+    local function UpdateAchievementsTable()
+        -- Clear existing children
+        for i = 1, scrollChild:GetNumChildren() do
+            local child = select(i, scrollChild:GetChildren())
+            child:Hide()
+            child:SetParent(nil)
+        end
+
+        local yOffset = 0
+        local activeID = AT.db.settings.activeAchievementID
+
+        -- Create header row
+        local headerFrame = CreateFrame("Frame", nil, scrollChild)
+        headerFrame:SetSize(480, 25)
+        headerFrame:SetPoint("TOPLEFT", 0, -yOffset)
+
+        local headerBg = headerFrame:CreateTexture(nil, "BACKGROUND")
+        headerBg:SetAllPoints()
+        headerBg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+
+        local idHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        idHeader:SetPoint("LEFT", 5, 0)
+        idHeader:SetText("ID")
+
+        local nameHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        nameHeader:SetPoint("LEFT", 50, 0)
+        nameHeader:SetText("Achievement Name")
+
+        local countHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        countHeader:SetPoint("LEFT", 280, 0)
+        countHeader:SetText("Count")
+
+        local activeHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        activeHeader:SetPoint("LEFT", 330, 0)
+        activeHeader:SetText("Active")
+
+        local deleteHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        deleteHeader:SetPoint("LEFT", 420, 0)
+        deleteHeader:SetText("Delete")
+
+        yOffset = yOffset + 25
+
+        -- Create rows for each tracked achievement
+        for achievementID, count in pairs(AT.db.achievements) do
+            local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+            local isActive = (achievementID == activeID)
+
+            -- Create row frame
+            local rowFrame = CreateFrame("Frame", nil, scrollChild)
+            rowFrame:SetSize(480, 25)
+            rowFrame:SetPoint("TOPLEFT", 0, -yOffset)
+
+            -- Alternating row colors
+            local rowBg = rowFrame:CreateTexture(nil, "BACKGROUND")
+            rowBg:SetAllPoints()
+            if (yOffset / 25) % 2 == 0 then
+                rowBg:SetColorTexture(0.1, 0.1, 0.1, 0.3)
+            else
+                rowBg:SetColorTexture(0.15, 0.15, 0.15, 0.3)
+            end
+
+            -- Achievement ID
+            local idText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            idText:SetPoint("LEFT", 5, 0)
+            idText:SetText(tostring(achievementID))
+
+            -- Achievement name (truncated if too long)
+            local nameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            nameText:SetPoint("LEFT", 50, 0)
+            nameText:SetSize(220, 20)
+            nameText:SetJustifyH("LEFT")
+            if string.len(achievementName) > 30 then
+                nameText:SetText(string.sub(achievementName, 1, 27) .. "...")
+            else
+                nameText:SetText(achievementName)
+            end
+
+            -- Count
+            local countText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            countText:SetPoint("LEFT", 280, 0)
+            countText:SetText(tostring(count))
+
+            -- Set Active button
+            local activeButton = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
+            activeButton:SetSize(70, 18)
+            activeButton:SetPoint("LEFT", 330, 0)
+            if isActive then
+                activeButton:SetText("ACTIVE")
+                activeButton:SetEnabled(false)
+            else
+                activeButton:SetText("Set Active")
+                activeButton:SetEnabled(true)
+                activeButton:SetScript("OnClick", function()
+                    AT:SetActiveAchievement(achievementID)
+                    UpdateAchievementsTable() -- Refresh the table
+                end)
+            end
+
+            -- Delete button
+            local deleteButton = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
+            deleteButton:SetSize(50, 18)
+            deleteButton:SetPoint("LEFT", 420, 0)
+            deleteButton:SetText("Delete")
+            deleteButton:SetScript("OnClick", function()
+                AT:ToggleTrackedAchievement(achievementID) -- This will remove it
+                UpdateAchievementsTable() -- Refresh the table
+            end)
+
+            yOffset = yOffset + 25
+        end
+
+        -- If no achievements, show message
+        if yOffset == 25 then -- Only header row
+            local noDataFrame = CreateFrame("Frame", nil, scrollChild)
+            noDataFrame:SetSize(480, 25)
+            noDataFrame:SetPoint("TOPLEFT", 0, -yOffset)
+
+            local noDataText = noDataFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            noDataText:SetPoint("CENTER")
+            noDataText:SetText("No achievements tracked yet. Add one above!")
+            noDataText:SetTextColor(0.7, 0.7, 0.7)
+
+            yOffset = yOffset + 25
+        end
+
+        -- Set scroll child height
+        scrollChild:SetHeight(math.max(yOffset, 1))
+    end
+
+    -- Add button click handler
+    addButton:SetScript("OnClick", function()
+        local achievementID = tonumber(addInput:GetText())
+        if achievementID then
+            -- Check if achievement exists
+            local achievementName = select(2, GetAchievementInfo(achievementID))
+            if achievementName then
+                AT:ToggleTrackedAchievement(achievementID)
+                addInput:SetText("") -- Clear input
+                UpdateAchievementsTable() -- Refresh table
+            else
+                print("|cffff0000[AT]|r Invalid achievement ID: " .. achievementID)
+            end
+        else
+            print("|cffff0000[AT]|r Please enter a valid achievement ID")
+        end
+    end)
+
+    -- Panel show/hide handlers
+    panel:SetScript("OnShow", function()
+        UpdateAchievementsTable()
+    end)
 
     -- Register with settings
     if Settings and Settings.RegisterCanvasLayoutCategory then
