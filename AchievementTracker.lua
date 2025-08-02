@@ -10,7 +10,7 @@ AT.db = nil
 
 -- Default database structure
 local defaultDB = {
-    achievements = {}, -- [achievementID] = { [playerName] = { timestamp, achievementName, server } }
+    achievements = {}, -- [achievementID] = { ["PlayerName-ServerName"] = timestamp }
     settings = {
         enableDebug = false,
         trackedAchievements = {}, -- specific achievement IDs to track (empty = track all)
@@ -109,20 +109,45 @@ function AT:RecordAchievement(playerName, achievementID, achievementName)
         AT.db.achievements[achievementID] = {}
     end
 
-    -- Get server name
-    local server = GetRealmName()
+    -- Create player-server key
+    -- If playerName already contains server (e.g., "PlayerName-ServerName"), use as-is
+    -- Otherwise, try to get their server or fall back to just the name
+    local playerKey = playerName
+    if not string.find(playerName, "-") then
+        -- Try to get the player's actual server
+        local server = AT:GetPlayerServer(playerName)
+        if server then
+            playerKey = playerName .. "-" .. server
+        end
+        -- If we can't get their server, just use the name (might have collisions)
+    end
 
-    -- Record the achievement
-    AT.db.achievements[achievementID][playerName] = {
-        timestamp = time(),
-        achievementName = achievementName,
-        server = server
-    }
+    -- Record the achievement with timestamp
+    AT.db.achievements[achievementID][playerKey] = time()
 
     if AT.db.settings.enableDebug then
         print(string.format("|cff00ff00[AT]|r Recorded: %s earned [%s] (ID: %d)",
-              playerName, achievementName, achievementID))
+              playerKey, achievementName, achievementID))
     end
+end
+
+-- Try to get a player's server name
+function AT:GetPlayerServer(playerName)
+    -- Check if they're in our party/raid and get their server
+    for i = 1, GetNumGroupMembers() do
+        local unit = IsInRaid() and ("raid" .. i) or ("party" .. (i - 1))
+        if i == 1 and not IsInRaid() then
+            unit = "player"
+        end
+
+        local name = UnitName(unit)
+        if name == playerName then
+            local server = select(2, UnitName(unit))
+            return server
+        end
+    end
+
+    return nil -- Couldn't determine server
 end
 
 -- Event handler
@@ -202,8 +227,8 @@ function AT:ShowOverallStats()
 
     for achievementID, players in pairs(AT.db.achievements) do
         totalAchievements = totalAchievements + 1
-        for playerName, _ in pairs(players) do
-            playerSet[playerName] = true
+        for playerKey, _ in pairs(players) do
+            playerSet[playerKey] = true
         end
     end
 
@@ -217,13 +242,12 @@ function AT:ShowOverallStats()
     -- Show breakdown by achievement
     for achievementID, players in pairs(AT.db.achievements) do
         local count = 0
-        local achievementName = ""
-        for playerName, data in pairs(players) do
+        for _ in pairs(players) do
             count = count + 1
-            if achievementName == "" then
-                achievementName = data.achievementName
-            end
         end
+
+        -- Get achievement name from game API
+        local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
         print(string.format("  [%d] %s: %d players", achievementID, achievementName, count))
     end
 end
