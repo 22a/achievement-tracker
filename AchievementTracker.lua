@@ -63,6 +63,17 @@ end
 function AT:MigrateData()
     local migrated = false
 
+    -- Ensure new settings exist with defaults
+    if not AT.db.settings.displayPrefix then
+        AT.db.settings.displayPrefix = "AotC this season"
+        migrated = true
+    end
+
+    if not AT.db.settings.fontSize then
+        AT.db.settings.fontSize = 12
+        migrated = true
+    end
+
     for achievementID, data in pairs(AT.db.achievements) do
         -- Check if this is old format (table with player data) vs new format (number)
         if type(data) == "table" then
@@ -658,7 +669,11 @@ function AT:CreateSettingsPanel()
     prefixInput:SetSize(200, 20)
     prefixInput:SetPoint("TOPLEFT", prefixLabel, "BOTTOMLEFT", 0, -5)
     prefixInput:SetAutoFocus(false)
-    prefixInput:SetText(AT.db.settings.displayPrefix or "AotC this season")
+
+    -- Update input field when panel is shown
+    local function UpdatePrefixInput()
+        prefixInput:SetText(AT.db.settings.displayPrefix or "AotC this season")
+    end
 
     -- Save button
     local saveButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -769,6 +784,7 @@ function AT:CreateSettingsPanel()
     -- Update stats when panel is shown and set up auto-refresh
     panel:SetScript("OnShow", function()
         UpdateStats()
+        UpdatePrefixInput() -- Update the prefix input field
         -- Set up auto-refresh timer
         panel.refreshTimer = C_Timer.NewTicker(2, UpdateStats) -- Update every 2 seconds
     end)
