@@ -241,7 +241,11 @@ function AT:CreateSettingsPanel()
     enableCheckbox:SetScript("OnClick", function()
         AT.db.settings.displayFrame.enabled = enableCheckbox:GetChecked()
         if AT.db.settings.displayFrame.enabled then
-            AT:CreateDisplayFrame()
+            if AT.displayFrame then
+                AT.displayFrame:Show()
+            else
+                AT:CreateDisplayFrame()
+            end
             print("|cff00ff00[AT]|r Display frame enabled")
         else
             if AT.displayFrame then
@@ -295,7 +299,7 @@ function AT:CreateSettingsPanel()
 
     -- Font Size setting
     local fontLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    fontLabel:SetPoint("TOPLEFT", prefixLabel, "BOTTOMLEFT", 0, -30)
+    fontLabel:SetPoint("TOPLEFT", prefixInput, "BOTTOMLEFT", 0, -40)
     fontLabel:SetText("Font Size:")
 
     local fontSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
@@ -306,13 +310,8 @@ function AT:CreateSettingsPanel()
     fontSlider:SetValueStep(1)
     fontSlider:SetObeyStepOnDrag(true)
 
-    -- Slider labels
-    fontSlider.Low = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    fontSlider.Low:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, 3)
+    -- Slider labels (using template's built-in labels)
     fontSlider.Low:SetText("8")
-
-    fontSlider.High = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    fontSlider.High:SetPoint("TOPRIGHT", fontSlider, "BOTTOMRIGHT", 0, 3)
     fontSlider.High:SetText("24")
 
     fontSlider.Text = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormal")
