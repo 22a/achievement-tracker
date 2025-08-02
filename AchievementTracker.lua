@@ -717,112 +717,83 @@ function AT:CreateSettingsPanel()
     end
 end
 
--- Create the on-screen display frame
+-- Create the on-screen display frame (copied exactly from BestFPS pattern)
 function AT:CreateDisplayFrame()
     if AT.displayFrame then
         print("|cff00ff00[AT]|r Display frame already exists")
         return
     end
 
-    print("|cff00ff00[AT]|r Creating display frame...")
+    print("|cff00ff00[AT]|r Creating display frame using BestFPS pattern...")
 
-    -- Try to create frame with error handling
-    local success, frame = pcall(function()
-        return CreateFrame("Frame", "AchievementTrackerDisplay", UIParent, "BackdropTemplate")
-    end)
+    -- Create the main frame exactly like BestFPS does
+    AT.displayFrame = CreateFrame("Frame", "AchievementTrackerDisplay", UIParent, "BackdropTemplate")
+    AT.displayFrame:SetSize(200, 30)
+    AT.displayFrame:SetPoint("CENTER")
+    AT.displayFrame:SetClampedToScreen(true)
 
-    if not success then
-        print("|cffff0000[AT]|r Failed to create frame with BackdropTemplate, trying without...")
-        frame = CreateFrame("Frame", "AchievementTrackerDisplay", UIParent)
-    else
-        print("|cff00ff00[AT]|r Frame created with BackdropTemplate")
-    end
+    -- Set backdrop exactly like BestFPS
+    AT.displayFrame:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    AT.displayFrame:SetBackdropColor(0, 0, 0, 0.8)
 
-    if not frame then
-        print("|cffff0000[AT]|r Frame creation failed completely!")
-        return
-    end
+    -- Enable mouse exactly like BestFPS
+    AT.displayFrame:EnableMouse(true)
+    AT.displayFrame:SetMovable(true)
+    AT.displayFrame:RegisterForDrag("LeftButton")
 
-    print("|cff00ff00[AT]|r Setting frame properties...")
-    frame:SetSize(200, 30)
-    frame:SetPoint("TOPLEFT", AT.db.settings.displayFrame.x, AT.db.settings.displayFrame.y)
-    frame:SetClampedToScreen(true)
-
-    print("|cff00ff00[AT]|r Setting backdrop...")
-    -- Try backdrop with error handling
-    local backdropSuccess = pcall(function()
-        frame:SetBackdrop({
-            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-            tile = true,
-            tileSize = 16,
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
-        })
-        frame:SetBackdropColor(0, 0, 0, 0.8)
-        frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
-    end)
-
-    if not backdropSuccess then
-        print("|cffff0000[AT]|r Backdrop failed, creating simple background...")
-        local bg = frame:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetColorTexture(0, 0, 0, 0.8)
-    else
-        print("|cff00ff00[AT]|r Backdrop set successfully")
-    end
-
-    print("|cff00ff00[AT]|r Setting up mouse interaction...")
-    frame:EnableMouse(true)
-    frame:SetMovable(true)
-    frame:RegisterForDrag("LeftButton")
-
-    print("|cff00ff00[AT]|r Creating text...")
-    local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    -- Create text
+    local text = AT.displayFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     text:SetPoint("CENTER")
     text:SetTextColor(1, 1, 1, 1)
-    text:SetText("Test Text")
-    frame.text = text
+    AT.displayFrame.text = text
 
-    print("|cff00ff00[AT]|r Setting up event handlers...")
-    -- Mouse handlers
-    frame:SetScript("OnMouseDown", function(self, button)
+    -- Mouse handlers exactly like BestFPS
+    local function OnMouseDown(self, button)
         if IsShiftKeyDown() and button == "LeftButton" then
             self:StartMoving()
         end
-    end)
+    end
 
-    frame:SetScript("OnMouseUp", function(self, button)
+    local function OnMouseUp(self, button)
         self:StopMovingOrSizing()
+        -- Save position
         local point, _, _, x, y = self:GetPoint()
         AT.db.settings.displayFrame.x = x
         AT.db.settings.displayFrame.y = y
-    end)
+    end
 
-    -- Tooltip handlers
-    frame:SetScript("OnEnter", function(self)
+    -- Tooltip handlers exactly like BestFPS
+    local function OnEnter(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Achievement Tracker", 1, 1, 1)
-        GameTooltip:AddLine("Hold Shift + Drag to move", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Hold |cffffffffShift|r + Drag to move", nil, nil, nil, true)
         GameTooltip:Show()
-    end)
+    end
 
-    frame:SetScript("OnLeave", function(self)
+    local function OnLeave(self)
         GameTooltip:Hide()
-    end)
+    end
 
-    print("|cff00ff00[AT]|r Setting visibility...")
+    -- Attach scripts exactly like BestFPS
+    AT.displayFrame:SetScript("OnMouseDown", OnMouseDown)
+    AT.displayFrame:SetScript("OnMouseUp", OnMouseUp)
+    AT.displayFrame:SetScript("OnEnter", OnEnter)
+    AT.displayFrame:SetScript("OnLeave", OnLeave)
+
     -- Show the frame
-    frame:Show()
-    AT.db.settings.displayFrame.visible = true
+    AT.displayFrame:Show()
 
-    print("|cff00ff00[AT]|r Storing frame reference...")
-    AT.displayFrame = frame
-
-    print("|cff00ff00[AT]|r Updating display text...")
+    -- Update the text
     AT:UpdateDisplayFrame()
 
-    print("|cff00ff00[AT]|r Display frame created successfully!")
+    print("|cff00ff00[AT]|r Display frame created successfully using BestFPS pattern!")
 end
 
 -- Update the display frame text
