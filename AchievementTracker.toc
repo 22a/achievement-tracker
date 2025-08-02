@@ -1,0 +1,9 @@
+## Interface: 110002
+## Title: Achievement Tracker
+## Notes: Tracks achievements earned by party/raid members from chat messages
+## Author: YourName
+## Version: 1.0.0
+## SavedVariables: AchievementTrackerDB
+## DefaultState: enabled
+
+AchievementTracker.lua
