@@ -726,76 +726,100 @@ function AT:CreateDisplayFrame()
 
     print("|cff00ff00[AT]|r Creating display frame...")
 
-    -- Create main frame using BackdropTemplate like BestFPS
-    local frame = CreateFrame("Frame", "AchievementTrackerDisplay", UIParent, "BackdropTemplate")
+    -- Try to create frame with error handling
+    local success, frame = pcall(function()
+        return CreateFrame("Frame", "AchievementTrackerDisplay", UIParent, "BackdropTemplate")
+    end)
+
+    if not success then
+        print("|cffff0000[AT]|r Failed to create frame with BackdropTemplate, trying without...")
+        frame = CreateFrame("Frame", "AchievementTrackerDisplay", UIParent)
+    else
+        print("|cff00ff00[AT]|r Frame created with BackdropTemplate")
+    end
+
+    if not frame then
+        print("|cffff0000[AT]|r Frame creation failed completely!")
+        return
+    end
+
+    print("|cff00ff00[AT]|r Setting frame properties...")
     frame:SetSize(200, 30)
     frame:SetPoint("TOPLEFT", AT.db.settings.displayFrame.x, AT.db.settings.displayFrame.y)
     frame:SetClampedToScreen(true)
 
-    -- Set backdrop (background and border)
-    frame:SetBackdrop({
-        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
-    frame:SetBackdropColor(0, 0, 0, 0.8)
-    frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    print("|cff00ff00[AT]|r Setting backdrop...")
+    -- Try backdrop with error handling
+    local backdropSuccess = pcall(function()
+        frame:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        frame:SetBackdropColor(0, 0, 0, 0.8)
+        frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    end)
 
-    -- Enable mouse interaction
+    if not backdropSuccess then
+        print("|cffff0000[AT]|r Backdrop failed, creating simple background...")
+        local bg = frame:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.8)
+    else
+        print("|cff00ff00[AT]|r Backdrop set successfully")
+    end
+
+    print("|cff00ff00[AT]|r Setting up mouse interaction...")
     frame:EnableMouse(true)
     frame:SetMovable(true)
     frame:RegisterForDrag("LeftButton")
 
-    -- Text
+    print("|cff00ff00[AT]|r Creating text...")
     local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     text:SetPoint("CENTER")
     text:SetTextColor(1, 1, 1, 1)
+    text:SetText("Test Text")
     frame.text = text
 
-    -- Mouse handlers (like BestFPS)
-    local function OnMouseDown(self, button)
+    print("|cff00ff00[AT]|r Setting up event handlers...")
+    -- Mouse handlers
+    frame:SetScript("OnMouseDown", function(self, button)
         if IsShiftKeyDown() and button == "LeftButton" then
             self:StartMoving()
         end
-    end
+    end)
 
-    local function OnMouseUp(self, button)
+    frame:SetScript("OnMouseUp", function(self, button)
         self:StopMovingOrSizing()
-        -- Save position
         local point, _, _, x, y = self:GetPoint()
         AT.db.settings.displayFrame.x = x
         AT.db.settings.displayFrame.y = y
-    end
+    end)
 
     -- Tooltip handlers
-    local function OnEnter(self)
+    frame:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Achievement Tracker", 1, 1, 1)
-        GameTooltip:AddLine("Hold |cffffffffShift|r + Drag to move", nil, nil, nil, true)
+        GameTooltip:AddLine("Hold Shift + Drag to move", 0.7, 0.7, 0.7)
         GameTooltip:Show()
-    end
+    end)
 
-    local function OnLeave(self)
+    frame:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
-    end
+    end)
 
-    -- Attach event handlers
-    frame:SetScript("OnMouseDown", OnMouseDown)
-    frame:SetScript("OnMouseUp", OnMouseUp)
-    frame:SetScript("OnEnter", OnEnter)
-    frame:SetScript("OnLeave", OnLeave)
+    print("|cff00ff00[AT]|r Setting visibility...")
+    -- Show the frame
+    frame:Show()
+    AT.db.settings.displayFrame.visible = true
 
-    -- Show/hide based on settings
-    if AT.db.settings.displayFrame.visible then
-        frame:Show()
-    else
-        frame:Hide()
-    end
-
+    print("|cff00ff00[AT]|r Storing frame reference...")
     AT.displayFrame = frame
+
+    print("|cff00ff00[AT]|r Updating display text...")
     AT:UpdateDisplayFrame()
 
     print("|cff00ff00[AT]|r Display frame created successfully!")
