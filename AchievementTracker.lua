@@ -15,7 +15,7 @@ frame:RegisterEvent("CHAT_MSG_ACHIEVEMENT")
 -- Default database structure
 local defaultDB = {
     achievements = {
-        41298 = 0, -- Ahead of the Curve: Chrome King Gallywix
+        [41298] = 0, -- Ahead of the Curve: Chrome King Gallywix
     }, -- [achievementID] = count (simple counter)
     settings = {
         enableDebug = false,
@@ -38,18 +38,34 @@ function AT:OnAddonLoaded()
         AchievementTrackerDB = {}
     end
 
-    -- Merge with defaults
-    for key, value in pairs(defaultDB) do
-        if AchievementTrackerDB[key] == nil then
-            AchievementTrackerDB[key] = value
-        elseif type(value) == "table" then
-            for subkey, subvalue in pairs(value) do
-                if AchievementTrackerDB[key][subkey] == nil then
-                    AchievementTrackerDB[key][subkey] = subvalue
-                end
+    -- Migrate old flat settings structure to new nested structure
+    if AchievementTrackerDB.settings then
+        -- Migrate displayPrefix from flat to nested structure
+        if AchievementTrackerDB.settings.displayPrefix and not AchievementTrackerDB.settings.displayFrame then
+            AchievementTrackerDB.settings.displayFrame = {}
+        end
+        if AchievementTrackerDB.settings.displayPrefix and not AchievementTrackerDB.settings.displayFrame.displayPrefix then
+            AchievementTrackerDB.settings.displayFrame.displayPrefix = AchievementTrackerDB.settings.displayPrefix
+        end
+
+        -- Migrate fontSize from flat to nested structure
+        if AchievementTrackerDB.settings.fontSize and not AchievementTrackerDB.settings.displayFrame.fontSize then
+            AchievementTrackerDB.settings.displayFrame.fontSize = AchievementTrackerDB.settings.fontSize
+        end
+    end
+
+    -- Merge with defaults (deep merge)
+    local function deepMerge(target, source)
+        for key, value in pairs(source) do
+            if target[key] == nil then
+                target[key] = value
+            elseif type(value) == "table" and type(target[key]) == "table" then
+                deepMerge(target[key], value)
             end
         end
     end
+
+    deepMerge(AchievementTrackerDB, defaultDB)
 
     AT.db = AchievementTrackerDB
 
