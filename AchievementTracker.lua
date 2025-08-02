@@ -301,12 +301,15 @@ function AT:CreateSettingsPanel()
 
     -- Function to update the achievements table
     local function UpdateAchievementsTable()
-        -- Clear existing children
-        for i = 1, scrollChild:GetNumChildren() do
-            local child = select(i, scrollChild:GetChildren())
-            child:Hide()
-            child:SetParent(nil)
+        -- Clear existing children more thoroughly
+        local children = {scrollChild:GetChildren()}
+        for i = 1, #children do
+            children[i]:Hide()
+            children[i]:SetParent(nil)
         end
+
+        -- Reset scroll position to avoid rendering issues
+        scrollFrame:SetVerticalScroll(0)
 
         local yOffset = 0
         local activeID = AT.db.settings.activeAchievementID
@@ -394,7 +397,10 @@ function AT:CreateSettingsPanel()
                 activeButton:SetEnabled(true)
                 activeButton:SetScript("OnClick", function()
                     AT:SetActiveAchievement(achievementID)
-                    UpdateAchievementsTable() -- Refresh the table
+                    -- Delay the table update slightly to avoid rendering conflicts
+                    C_Timer.After(0.05, function()
+                        UpdateAchievementsTable() -- Refresh the table
+                    end)
                 end)
             end
 
@@ -405,7 +411,10 @@ function AT:CreateSettingsPanel()
             deleteButton:SetText("Delete")
             deleteButton:SetScript("OnClick", function()
                 AT:ToggleTrackedAchievement(achievementID) -- This will remove it
-                UpdateAchievementsTable() -- Refresh the table
+                -- Delay the table update slightly to avoid rendering conflicts
+                C_Timer.After(0.05, function()
+                    UpdateAchievementsTable() -- Refresh the table
+                end)
             end)
 
             yOffset = yOffset + 25
@@ -425,8 +434,18 @@ function AT:CreateSettingsPanel()
             yOffset = yOffset + 25
         end
 
-        -- Set scroll child height
+        -- Set scroll child height and force refresh
         scrollChild:SetHeight(math.max(yOffset, 1))
+
+        -- Force scroll frame to recalculate and refresh
+        scrollFrame:UpdateScrollChildRect()
+
+        -- Small delay to ensure proper rendering
+        C_Timer.After(0.01, function()
+            if scrollFrame:IsVisible() then
+                scrollFrame:UpdateScrollChildRect()
+            end
+        end)
     end
 
     -- Add button click handler

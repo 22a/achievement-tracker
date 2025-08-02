@@ -2,7 +2,7 @@
 ## Title: Achievement Tracker
 ## Notes: Tracks achievements earned by party/raid members from chat messages for long-term analysis
 ## Author: 22a
-## Version: 0.1.11
+## Version: 0.1.12
 ## SavedVariables: AchievementTrackerDB
 ## DefaultState: enabled
 ## X-Category: Achievements
