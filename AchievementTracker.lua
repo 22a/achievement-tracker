@@ -10,7 +10,7 @@ AT.db = nil
 
 -- Default database structure
 local defaultDB = {
-    achievements = {}, -- [achievementID] = { ["PlayerName-ServerName"] = timestamp }
+    achievements = {}, -- [achievementID] = count (simple counter)
     rawData = {}, -- Store all raw achievement data for analysis
     settings = {
         enableDebug = false,
@@ -38,11 +38,44 @@ function AT:Initialize()
     end
     
     AT.db = AchievementTrackerDB
-    
+
+    -- Migrate old data format to new format
+    AT:MigrateData()
+
     print("|cff00ff00Achievement Tracker|r loaded. Type |cffff0000/at help|r for commands.")
 
     -- Create settings panel
     AT:CreateSettingsPanel()
+end
+
+-- Migrate old data format to new format
+function AT:MigrateData()
+    local migrated = false
+
+    for achievementID, data in pairs(AT.db.achievements) do
+        -- Check if this is old format (table with player data) vs new format (number)
+        if type(data) == "table" then
+            -- Count how many players had this achievement
+            local count = 0
+            for playerKey, timestamp in pairs(data) do
+                count = count + 1
+            end
+
+            -- Replace with simple counter
+            AT.db.achievements[achievementID] = count
+            migrated = true
+
+            if AT.db.settings.enableDebug then
+                local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown"
+                print(string.format("|cff00ff00[AT]|r Migrated [%d] %s: %d players -> %d count",
+                    achievementID, achievementName, count, count))
+            end
+        end
+    end
+
+    if migrated then
+        print("|cff00ff00[AT]|r Data migrated from old format to new simple counter format.")
+    end
 end
 
 -- Parse achievement message from chat
@@ -108,30 +141,17 @@ function AT:RecordAchievement(playerName, achievementID, achievementName)
         return
     end
 
-    -- Initialize achievement data if needed
+    -- Initialize achievement counter if needed
     if not AT.db.achievements[achievementID] then
-        AT.db.achievements[achievementID] = {}
+        AT.db.achievements[achievementID] = 0
     end
 
-    -- Create player-server key
-    -- If playerName already contains server (e.g., "PlayerName-ServerName"), use as-is
-    -- Otherwise, try to get their server or fall back to just the name
-    local playerKey = playerName
-    if not string.find(playerName, "-") then
-        -- Try to get the player's actual server
-        local server = AT:GetPlayerServer(playerName)
-        if server then
-            playerKey = playerName .. "-" .. server
-        end
-        -- If we can't get their server, just use the name (might have collisions)
-    end
-
-    -- Record the achievement with timestamp
-    AT.db.achievements[achievementID][playerKey] = time()
+    -- Increment the counter
+    AT.db.achievements[achievementID] = AT.db.achievements[achievementID] + 1
 
     if AT.db.settings.enableDebug then
-        print(string.format("|cff00ff00[AT]|r Recorded: %s earned [%s] (ID: %d)",
-              playerKey, achievementName, achievementID))
+        print(string.format("|cff00ff00[AT]|r Recorded: %s earned [%s] (ID: %d) - Total count: %d",
+              playerName, achievementName, achievementID, AT.db.achievements[achievementID]))
     end
 end
 
@@ -310,33 +330,27 @@ end
 -- Utility functions
 function AT:ShowOverallStats()
     local totalAchievements = 0
-    local totalPlayers = 0
-    local playerSet = {}
+    local totalCount = 0
 
-    for achievementID, players in pairs(AT.db.achievements) do
+    for achievementID, count in pairs(AT.db.achievements) do
         totalAchievements = totalAchievements + 1
-        for playerKey, _ in pairs(players) do
-            playerSet[playerKey] = true
-        end
+        totalCount = totalCount + count
     end
 
-    for _ in pairs(playerSet) do
-        totalPlayers = totalPlayers + 1
-    end
-
-    print(string.format("|cff00ff00[AT] Overall Stats:|r %d unique achievements, %d unique players tracked",
-          totalAchievements, totalPlayers))
+    print(string.format("|cff00ff00[AT] Overall Stats:|r %d unique achievements, %d total count",
+          totalAchievements, totalCount))
 
     -- Show breakdown by achievement
-    for achievementID, players in pairs(AT.db.achievements) do
-        local count = 0
-        for _ in pairs(players) do
-            count = count + 1
-        end
+    local sortedAchievements = {}
+    for achievementID, count in pairs(AT.db.achievements) do
+        table.insert(sortedAchievements, {id = achievementID, count = count})
+    end
 
-        -- Get achievement name from game API
-        local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
-        print(string.format("  [%d] %s: %d players", achievementID, achievementName, count))
+    table.sort(sortedAchievements, function(a, b) return a.count > b.count end)
+
+    for _, achievement in ipairs(sortedAchievements) do
+        local achievementName = select(2, GetAchievementInfo(achievement.id)) or "Unknown Achievement"
+        print(string.format("  [%d] %s: %d times", achievement.id, achievementName, achievement.count))
     end
 end
 
@@ -458,23 +472,16 @@ function AT:CreateSettingsPanel()
     -- Update stats function
     local function UpdateStats()
         local totalAchievements = 0
-        local totalPlayers = 0
-        local playerSet = {}
+        local totalCount = 0
         local statsLines = {}
 
         -- Overall stats
-        for achievementID, players in pairs(AT.db.achievements) do
+        for achievementID, count in pairs(AT.db.achievements) do
             totalAchievements = totalAchievements + 1
-            for playerKey, _ in pairs(players) do
-                playerSet[playerKey] = true
-            end
+            totalCount = totalCount + count
         end
 
-        for _ in pairs(playerSet) do
-            totalPlayers = totalPlayers + 1
-        end
-
-        table.insert(statsLines, string.format("Overall: %d achievements, %d unique players", totalAchievements, totalPlayers))
+        table.insert(statsLines, string.format("Overall: %d achievements, %d total count", totalAchievements, totalCount))
         table.insert(statsLines, "")
 
         -- Individual achievement stats
@@ -483,11 +490,7 @@ function AT:CreateSettingsPanel()
 
             -- Sort achievements by count (highest first)
             local sortedAchievements = {}
-            for achievementID, players in pairs(AT.db.achievements) do
-                local count = 0
-                for _ in pairs(players) do
-                    count = count + 1
-                end
+            for achievementID, count in pairs(AT.db.achievements) do
                 table.insert(sortedAchievements, {id = achievementID, count = count})
             end
 
@@ -495,7 +498,7 @@ function AT:CreateSettingsPanel()
 
             for _, achievement in ipairs(sortedAchievements) do
                 local achievementName = select(2, GetAchievementInfo(achievement.id)) or "Unknown"
-                table.insert(statsLines, string.format("  [%d] %s: %d players",
+                table.insert(statsLines, string.format("  [%d] %s: %d times",
                     achievement.id, achievementName, achievement.count))
             end
         else
@@ -550,8 +553,20 @@ function AT:CreateSettingsPanel()
         end
     end)
 
-    -- Update stats when panel is shown
-    panel:SetScript("OnShow", UpdateStats)
+    -- Update stats when panel is shown and set up auto-refresh
+    panel:SetScript("OnShow", function()
+        UpdateStats()
+        -- Set up auto-refresh timer
+        panel.refreshTimer = C_Timer.NewTicker(2, UpdateStats) -- Update every 2 seconds
+    end)
+
+    -- Clean up timer when panel is hidden
+    panel:SetScript("OnHide", function()
+        if panel.refreshTimer then
+            panel.refreshTimer:Cancel()
+            panel.refreshTimer = nil
+        end
+    end)
 
     -- Add to Interface Options (support both old and new APIs)
     if Settings and Settings.RegisterCanvasLayoutCategory then
