@@ -266,9 +266,122 @@ function AT:CreateSettingsPanel()
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("Achievement Tracker Settings")
 
+    -- Display Frame Settings Section
+    local displayLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    displayLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -30)
+    displayLabel:SetText("Display Frame Settings:")
+
+    -- Display Prefix setting
+    local prefixLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    prefixLabel:SetPoint("TOPLEFT", displayLabel, "BOTTOMLEFT", 10, -10)
+    prefixLabel:SetText("Display Text Prefix:")
+
+    local prefixInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    prefixInput:SetSize(150, 20)
+    prefixInput:SetPoint("LEFT", prefixLabel, "RIGHT", 10, 0)
+    prefixInput:SetAutoFocus(false)
+    prefixInput:SetText(AT.db.settings.displayPrefix or "AotC this season")
+
+    local prefixSaveButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    prefixSaveButton:SetSize(50, 22)
+    prefixSaveButton:SetPoint("LEFT", prefixInput, "RIGHT", 5, 0)
+    prefixSaveButton:SetText("Save")
+    prefixSaveButton:SetScript("OnClick", function()
+        local newPrefix = prefixInput:GetText()
+        if newPrefix and newPrefix ~= "" then
+            AT.db.settings.displayPrefix = newPrefix
+            AT:UpdateDisplayFrame()
+            print("|cff00ff00[AT]|r Display prefix updated to: '" .. newPrefix .. "'")
+        end
+    end)
+
+    -- Font Size setting
+    local fontLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    fontLabel:SetPoint("TOPLEFT", prefixLabel, "BOTTOMLEFT", 0, -30)
+    fontLabel:SetText("Font Size:")
+
+    local fontSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    fontSlider:SetSize(150, 20)
+    fontSlider:SetPoint("LEFT", fontLabel, "RIGHT", 10, 0)
+    fontSlider:SetMinMaxValues(8, 24)
+    fontSlider:SetValue(AT.db.settings.fontSize or 12)
+    fontSlider:SetValueStep(1)
+    fontSlider:SetObeyStepOnDrag(true)
+
+    -- Slider labels
+    fontSlider.Low = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    fontSlider.Low:SetPoint("TOPLEFT", fontSlider, "BOTTOMLEFT", 0, 3)
+    fontSlider.Low:SetText("8")
+
+    fontSlider.High = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    fontSlider.High:SetPoint("TOPRIGHT", fontSlider, "BOTTOMRIGHT", 0, 3)
+    fontSlider.High:SetText("24")
+
+    fontSlider.Text = fontSlider:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    fontSlider.Text:SetPoint("LEFT", fontSlider, "RIGHT", 10, 0)
+    fontSlider.Text:SetText("Size: " .. (AT.db.settings.fontSize or 12))
+
+    fontSlider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value + 0.5)
+        AT.db.settings.fontSize = value
+        fontSlider.Text:SetText("Size: " .. value)
+        AT:UpdateDisplayFrame()
+    end)
+
+    -- General Settings Section
+    local generalLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    generalLabel:SetPoint("TOPLEFT", fontLabel, "BOTTOMLEFT", -10, -40)
+    generalLabel:SetText("General Settings:")
+
+    -- Debug Mode setting
+    local debugCheckbox = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    debugCheckbox:SetSize(20, 20)
+    debugCheckbox:SetPoint("TOPLEFT", generalLabel, "BOTTOMLEFT", 10, -10)
+    debugCheckbox:SetChecked(AT.db.settings.enableDebug)
+
+    local debugLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    debugLabel:SetPoint("LEFT", debugCheckbox, "RIGHT", 5, 0)
+    debugLabel:SetText("Enable Debug Mode")
+
+    debugCheckbox:SetScript("OnClick", function()
+        AT.db.settings.enableDebug = debugCheckbox:GetChecked()
+        print(string.format("|cff00ff00[AT]|r Debug mode: %s", AT.db.settings.enableDebug and "ON" or "OFF"))
+    end)
+
+    -- Active Achievement ID setting
+    local activeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    activeLabel:SetPoint("TOPLEFT", debugCheckbox, "BOTTOMLEFT", 0, -20)
+    activeLabel:SetText("Active Achievement ID:")
+
+    local activeInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    activeInput:SetSize(100, 20)
+    activeInput:SetPoint("LEFT", activeLabel, "RIGHT", 10, 0)
+    activeInput:SetAutoFocus(false)
+    activeInput:SetNumeric(true)
+    activeInput:SetText(tostring(AT.db.settings.activeAchievementID or ""))
+
+    local activeSaveButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    activeSaveButton:SetSize(50, 22)
+    activeSaveButton:SetPoint("LEFT", activeInput, "RIGHT", 5, 0)
+    activeSaveButton:SetText("Save")
+    activeSaveButton:SetScript("OnClick", function()
+        local achievementID = tonumber(activeInput:GetText())
+        if achievementID then
+            local achievementName = select(2, GetAchievementInfo(achievementID))
+            if achievementName then
+                AT:SetActiveAchievement(achievementID)
+                print("|cff00ff00[AT]|r Active achievement set to: [" .. achievementID .. "] " .. achievementName)
+            else
+                print("|cffff0000[AT]|r Invalid achievement ID: " .. achievementID)
+            end
+        else
+            print("|cffff0000[AT]|r Please enter a valid achievement ID")
+        end
+    end)
+
     -- Add Achievement section
     local addLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    addLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -30)
+    addLabel:SetPoint("TOPLEFT", activeLabel, "BOTTOMLEFT", -10, -40)
     addLabel:SetText("Add Achievement to Track:")
 
     -- Input box for achievement ID
@@ -466,8 +579,18 @@ function AT:CreateSettingsPanel()
         end
     end)
 
+    -- Function to update all settings values
+    local function UpdateSettingsValues()
+        prefixInput:SetText(AT.db.settings.displayPrefix or "AotC this season")
+        fontSlider:SetValue(AT.db.settings.fontSize or 12)
+        fontSlider.Text:SetText("Size: " .. (AT.db.settings.fontSize or 12))
+        debugCheckbox:SetChecked(AT.db.settings.enableDebug)
+        activeInput:SetText(tostring(AT.db.settings.activeAchievementID or ""))
+    end
+
     -- Panel show/hide handlers
     panel:SetScript("OnShow", function()
+        UpdateSettingsValues()
         UpdateAchievementsTable()
     end)
 
