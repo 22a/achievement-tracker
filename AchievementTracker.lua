@@ -286,8 +286,13 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
 
     elseif command == "config" then
         -- Open the settings panel
-        InterfaceOptionsFrame_OpenToCategory("Achievement Tracker")
-        InterfaceOptionsFrame_OpenToCategory("Achievement Tracker") -- Call twice for reliability
+        if Settings and Settings.OpenToCategory then
+            Settings.OpenToCategory("Achievement Tracker")
+        else
+            -- Fallback for older versions
+            InterfaceOptionsFrame_OpenToCategory("Achievement Tracker")
+            InterfaceOptionsFrame_OpenToCategory("Achievement Tracker") -- Call twice for reliability
+        end
 
     elseif command == "rawdata" then
         local count = tonumber(args[2]) or 5
@@ -493,6 +498,13 @@ function AT:CreateSettingsPanel()
     -- Update stats when panel is shown
     panel:SetScript("OnShow", UpdateStats)
 
-    -- Add to Interface Options
-    InterfaceOptions_AddCategory(panel)
+    -- Add to Interface Options (support both old and new APIs)
+    if Settings and Settings.RegisterCanvasLayoutCategory then
+        -- New Settings API (11.0+)
+        local category = Settings.RegisterCanvasLayoutCategory(panel, "Achievement Tracker")
+        Settings.RegisterAddOnCategory(category)
+    else
+        -- Old Interface Options API (pre-11.0)
+        InterfaceOptions_AddCategory(panel)
+    end
 end
