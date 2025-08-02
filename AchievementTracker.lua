@@ -444,6 +444,7 @@ end
 function AT:ShowOverallStats()
     local totalAchievements = 0
     local totalCount = 0
+    local activeID = AT.db.settings.activeAchievementID
 
     for achievementID, count in pairs(AT.db.achievements) do
         totalAchievements = totalAchievements + 1
@@ -468,7 +469,8 @@ function AT:ShowOverallStats()
 
     for _, achievement in ipairs(sortedAchievements) do
         local achievementName = select(2, GetAchievementInfo(achievement.id)) or "Unknown Achievement"
-        print(string.format("  [%d] %s: %d times", achievement.id, achievementName, achievement.count))
+        local activeMarker = (achievement.id == activeID) and " |cffff8000[ACTIVE]|r" or ""
+        print(string.format("  [%d] %s: %d times%s", achievement.id, achievementName, achievement.count, activeMarker))
     end
 end
 
@@ -503,6 +505,7 @@ end
 
 function AT:ShowTrackedAchievements()
     local tracked = AT.db.settings.trackedAchievements
+    local activeID = AT.db.settings.activeAchievementID
 
     if #tracked == 0 then
         print("|cff00ff00[AT]|r Currently tracking ALL achievements")
@@ -510,8 +513,18 @@ function AT:ShowTrackedAchievements()
         print(string.format("|cff00ff00[AT]|r Currently tracking %d specific achievements:", #tracked))
         for _, achievementID in ipairs(tracked) do
             local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
-            print(string.format("  [%d] %s", achievementID, achievementName))
+            local activeMarker = (achievementID == activeID) and " |cffff8000[ACTIVE]|r" or ""
+            print(string.format("  [%d] %s%s", achievementID, achievementName, activeMarker))
         end
+    end
+
+    -- Show active achievement info
+    if activeID then
+        local activeName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
+        local count = AT.db.achievements[activeID] or 0
+        print(string.format("|cff00ff00[AT]|r Active display: [%d] %s (%d times)", activeID, activeName, count))
+    else
+        print("|cff00ff00[AT]|r No active achievement set for display")
     end
 end
 
@@ -592,6 +605,7 @@ function AT:CreateSettingsPanel()
         local totalAchievements = 0
         local totalCount = 0
         local statsLines = {}
+        local activeID = AT.db.settings.activeAchievementID
 
         -- Calculate totals
         for achievementID, count in pairs(AT.db.achievements) do
@@ -615,9 +629,18 @@ function AT:CreateSettingsPanel()
 
             for _, achievement in ipairs(sortedAchievements) do
                 local achievementName = select(2, GetAchievementInfo(achievement.id)) or "Unknown"
-                table.insert(statsLines, string.format("[%d] %s: %d times",
-                    achievement.id, achievementName, achievement.count))
+                local activeMarker = (achievement.id == activeID) and " [ACTIVE]" or ""
+                table.insert(statsLines, string.format("[%d] %s: %d times%s",
+                    achievement.id, achievementName, achievement.count, activeMarker))
             end
+        end
+
+        -- Add active achievement info at the bottom
+        if activeID then
+            local activeName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
+            local count = AT.db.achievements[activeID] or 0
+            table.insert(statsLines, "")
+            table.insert(statsLines, string.format("Active Display: [%d] %s (%d times)", activeID, activeName, count))
         end
 
         statsText:SetText(table.concat(statsLines, "\n"))
