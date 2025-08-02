@@ -47,7 +47,7 @@ function AT:OnAddonLoaded()
 
     AT.db = AchievementTrackerDB
 
-    print("|cff00ff00Achievement Tracker|r loaded. Type |cffff0000/at help|r for commands.")
+    print("|cff00ff00Achievement Tracker|r loaded. Open Interface Options > AddOns > Achievement Tracker to configure.")
 
     -- Create settings panel
     AT:CreateSettingsPanel()
@@ -136,72 +136,7 @@ end
 frame:SetScript("OnEvent", function(self, event, ...)
     AT:OnEvent(event, ...)
 end)
--- Slash command handler
-SLASH_ACHIEVEMENTTRACKER1 = "/at"
-SLASH_ACHIEVEMENTTRACKER2 = "/achievementtracker"
 
-function SlashCmdList.ACHIEVEMENTTRACKER(msg)
-    local args = {}
-    for word in string.gmatch(msg, "%S+") do
-        table.insert(args, word)
-    end
-
-    local command = args[1] and string.lower(args[1]) or "help"
-
-    if command == "help" then
-        print("|cff00ff00Achievement Tracker Commands:|r")
-        print("|cffff0000/at help|r - Show this help")
-        print("|cffff0000/at stats|r - Show achievement statistics")
-        print("|cffff0000/at debug|r - Toggle debug mode")
-        print("|cffff0000/at track <achievementID>|r - Add/remove tracked achievement")
-        print("|cffff0000/at config|r - Open settings panel")
-        print("|cffff0000/at list|r - Show currently tracked achievements")
-        print("|cffff0000/at active <achievementID>|r - Set active achievement for display")
-        print("|cffff0000/at show|r - Show/hide display frame")
-        print("|cffff0000/at reset|r - Reset display frame position")
-
-    elseif command == "stats" then
-        AT:ShowTrackedAchievements()
-
-    elseif command == "debug" then
-        AT.db.settings.enableDebug = not AT.db.settings.enableDebug
-        print(string.format("|cff00ff00[AT]|r Debug mode: %s",
-              AT.db.settings.enableDebug and "ON" or "OFF"))
-
-    elseif command == "track" then
-        local achievementID = tonumber(args[2])
-        if achievementID then
-            AT:ToggleTrackedAchievement(achievementID)
-        else
-            print("|cffff0000Usage:|r /at track <achievementID>")
-        end
-
-    elseif command == "list" then
-        AT:ShowTrackedAchievements()
-
-    elseif command == "config" then
-        InterfaceOptionsFrame_OpenToCategory("Achievement Tracker")
-        InterfaceOptionsFrame_OpenToCategory("Achievement Tracker") -- Call twice for Blizzard UI bug
-
-    elseif command == "active" then
-        local achievementID = tonumber(args[2])
-        if achievementID then
-            AT:SetActiveAchievement(achievementID)
-        else
-            print("|cffff0000Usage:|r /at active <achievementID>")
-        end
-
-    elseif command == "show" then
-        AT:ToggleDisplayFrame()
-
-    elseif command == "reset" then
-        AT:ResetDisplayFramePosition()
-
-    else
-        print("|cffff0000Unknown command:|r " .. command)
-        print("Type |cffff0000/at help|r for available commands.")
-    end
-end
 
 -- Toggle tracked achievement (using achievements object as source of truth)
 function AT:ToggleTrackedAchievement(achievementID)
@@ -276,9 +211,14 @@ function AT:CreateSettingsPanel()
     prefixLabel:SetPoint("TOPLEFT", displayLabel, "BOTTOMLEFT", 10, -10)
     prefixLabel:SetText("Display Text Prefix:")
 
+    local prefixHelp = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    prefixHelp:SetPoint("TOPLEFT", prefixLabel, "BOTTOMLEFT", 0, -2)
+    prefixHelp:SetText("(This text will be shown before the count, e.g., 'Your Text: 5')")
+    prefixHelp:SetTextColor(0.7, 0.7, 0.7)
+
     local prefixInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
     prefixInput:SetSize(150, 20)
-    prefixInput:SetPoint("LEFT", prefixLabel, "RIGHT", 10, 0)
+    prefixInput:SetPoint("TOPLEFT", prefixHelp, "BOTTOMLEFT", 0, -5)
     prefixInput:SetAutoFocus(false)
     prefixInput:SetText(AT.db.settings.displayPrefix or "AotC this season")
 
@@ -292,7 +232,20 @@ function AT:CreateSettingsPanel()
             AT.db.settings.displayPrefix = newPrefix
             AT:UpdateDisplayFrame()
             print("|cff00ff00[AT]|r Display prefix updated to: '" .. newPrefix .. "'")
+        else
+            print("|cffff0000[AT]|r Display prefix cannot be empty")
         end
+    end)
+
+    local prefixResetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    prefixResetButton:SetSize(50, 22)
+    prefixResetButton:SetPoint("LEFT", prefixSaveButton, "RIGHT", 5, 0)
+    prefixResetButton:SetText("Reset")
+    prefixResetButton:SetScript("OnClick", function()
+        AT.db.settings.displayPrefix = "AotC this season"
+        prefixInput:SetText("AotC this season")
+        AT:UpdateDisplayFrame()
+        print("|cff00ff00[AT]|r Display prefix reset to default: 'AotC this season'")
     end)
 
     -- Font Size setting
@@ -348,40 +301,9 @@ function AT:CreateSettingsPanel()
         print(string.format("|cff00ff00[AT]|r Debug mode: %s", AT.db.settings.enableDebug and "ON" or "OFF"))
     end)
 
-    -- Active Achievement ID setting
-    local activeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    activeLabel:SetPoint("TOPLEFT", debugCheckbox, "BOTTOMLEFT", 0, -20)
-    activeLabel:SetText("Active Achievement ID:")
-
-    local activeInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    activeInput:SetSize(100, 20)
-    activeInput:SetPoint("LEFT", activeLabel, "RIGHT", 10, 0)
-    activeInput:SetAutoFocus(false)
-    activeInput:SetNumeric(true)
-    activeInput:SetText(tostring(AT.db.settings.activeAchievementID or ""))
-
-    local activeSaveButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    activeSaveButton:SetSize(50, 22)
-    activeSaveButton:SetPoint("LEFT", activeInput, "RIGHT", 5, 0)
-    activeSaveButton:SetText("Save")
-    activeSaveButton:SetScript("OnClick", function()
-        local achievementID = tonumber(activeInput:GetText())
-        if achievementID then
-            local achievementName = select(2, GetAchievementInfo(achievementID))
-            if achievementName then
-                AT:SetActiveAchievement(achievementID)
-                print("|cff00ff00[AT]|r Active achievement set to: [" .. achievementID .. "] " .. achievementName)
-            else
-                print("|cffff0000[AT]|r Invalid achievement ID: " .. achievementID)
-            end
-        else
-            print("|cffff0000[AT]|r Please enter a valid achievement ID")
-        end
-    end)
-
     -- Add Achievement section
     local addLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    addLabel:SetPoint("TOPLEFT", activeLabel, "BOTTOMLEFT", -10, -40)
+    addLabel:SetPoint("TOPLEFT", debugCheckbox, "BOTTOMLEFT", -10, -30)
     addLabel:SetText("Add Achievement to Track:")
 
     -- Input box for achievement ID
@@ -585,7 +507,6 @@ function AT:CreateSettingsPanel()
         fontSlider:SetValue(AT.db.settings.fontSize or 12)
         fontSlider.Text:SetText("Size: " .. (AT.db.settings.fontSize or 12))
         debugCheckbox:SetChecked(AT.db.settings.enableDebug)
-        activeInput:SetText(tostring(AT.db.settings.activeAchievementID or ""))
     end
 
     -- Panel show/hide handlers
