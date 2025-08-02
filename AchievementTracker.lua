@@ -896,6 +896,10 @@ function AT:UpdateDisplayFrame()
     local activeID = AT.db.settings.activeAchievementID
     if not activeID then
         AT.displayFrame.text:SetText("No active achievement set")
+        -- Resize frame for this text
+        local textWidth = AT.displayFrame.text:GetStringWidth()
+        local textHeight = AT.displayFrame.text:GetStringHeight()
+        AT.displayFrame:SetSize(textWidth + 20, textHeight + 12)
         return
     end
 
@@ -908,7 +912,22 @@ function AT:UpdateDisplayFrame()
     AT.displayFrame.text:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
 
     -- Format the display text with custom prefix
-    AT.displayFrame.text:SetText(string.format("%s: %d", prefix, count))
+    local displayText = string.format("%s: %d", prefix, count)
+    AT.displayFrame.text:SetText(displayText)
+
+    -- Auto-resize frame based on text dimensions
+    local textWidth = AT.displayFrame.text:GetStringWidth()
+    local textHeight = AT.displayFrame.text:GetStringHeight()
+
+    -- Add padding around the text (10px horizontal, 6px vertical)
+    local frameWidth = textWidth + 20
+    local frameHeight = textHeight + 12
+
+    -- Set minimum size to prevent frame from being too small
+    frameWidth = math.max(frameWidth, 80)
+    frameHeight = math.max(frameHeight, 20)
+
+    AT.displayFrame:SetSize(frameWidth, frameHeight)
 end
 
 -- Set the active achievement for display
