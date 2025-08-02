@@ -11,7 +11,6 @@ AT.db = nil
 -- Default database structure
 local defaultDB = {
     achievements = {}, -- [achievementID] = count (simple counter)
-    rawData = {}, -- Store all raw achievement data for analysis
     settings = {
         enableDebug = false,
         trackedAchievements = {}, -- specific achievement IDs to track (empty = track all)
@@ -47,57 +46,15 @@ function AT:Initialize()
     
     AT.db = AchievementTrackerDB
 
-    -- Migrate old data format to new format
-    AT:MigrateData()
-
-    print("|cff00ff00Achievement Tracker|r loaded. Type |cffff0000/at help|r for commands.")
+    if AT.db.settings.enableDebug then
+        print("|cff00ff00Achievement Tracker|r loaded. Type |cffff0000/at help|r for commands.")
+    end
 
     -- Create settings panel
     AT:CreateSettingsPanel()
 
     -- Create display frame
     AT:CreateDisplayFrame()
-end
-
--- Migrate old data format to new format
-function AT:MigrateData()
-    local migrated = false
-
-    -- Ensure new settings exist with defaults
-    if not AT.db.settings.displayPrefix then
-        AT.db.settings.displayPrefix = "AotC this season"
-        migrated = true
-    end
-
-    if not AT.db.settings.fontSize then
-        AT.db.settings.fontSize = 12
-        migrated = true
-    end
-
-    for achievementID, data in pairs(AT.db.achievements) do
-        -- Check if this is old format (table with player data) vs new format (number)
-        if type(data) == "table" then
-            -- Count how many players had this achievement
-            local count = 0
-            for playerKey, timestamp in pairs(data) do
-                count = count + 1
-            end
-
-            -- Replace with simple counter
-            AT.db.achievements[achievementID] = count
-            migrated = true
-
-            if AT.db.settings.enableDebug then
-                local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown"
-                print(string.format("|cff00ff00[AT]|r Migrated [%d] %s: %d players -> %d count",
-                    achievementID, achievementName, count, count))
-            end
-        end
-    end
-
-    if migrated then
-        print("|cff00ff00[AT]|r Data migrated from old format to new simple counter format.")
-    end
 end
 
 -- Parse achievement message from chat
@@ -278,74 +235,7 @@ function AT:GetPlayerServer(playerName)
     return nil -- Couldn't determine server
 end
 
--- Capture all raw achievement data for analysis
-function AT:CaptureRawAchievementData(event, message, sender, language, channelString, target, flags, unknown, channelNumber, channelName, unknown2, counter, guid)
-    -- Initialize raw data storage
-    if not AT.db.rawData then
-        AT.db.rawData = {}
-    end
 
-    local timestamp = time()
-    local entry = {
-        timestamp = timestamp,
-        event = event,
-        message = message,
-        sender = sender,
-        language = language,
-        channelString = channelString,
-        target = target,
-        flags = flags,
-        unknown = unknown,
-        channelNumber = channelNumber,
-        channelName = channelName,
-        unknown2 = unknown2,
-        counter = counter,
-        guid = guid,
-        -- Additional context
-        playerServer = GetRealmName(),
-        isInParty = IsInGroup(LE_PARTY_CATEGORY_HOME),
-        isInRaid = IsInRaid(LE_PARTY_CATEGORY_HOME),
-        groupSize = GetNumGroupMembers(),
-    }
-
-    -- Try to extract achievement info
-    local playerName, achievementID, achievementName = AT:ParseAchievementMessage(message, sender)
-    if achievementID then
-        entry.parsedPlayerName = playerName
-        entry.parsedAchievementID = achievementID
-        entry.parsedAchievementName = achievementName
-
-        -- Get additional achievement info from API
-        local id, name, points, completed, month, day, year, description, flags, icon, rewardText, isGuild, wasEarnedByMe, earnedBy = GetAchievementInfo(achievementID)
-        entry.apiInfo = {
-            id = id,
-            name = name,
-            points = points,
-            completed = completed,
-            month = month,
-            day = day,
-            year = year,
-            description = description,
-            flags = flags,
-            icon = icon,
-            rewardText = rewardText,
-            isGuild = isGuild,
-            wasEarnedByMe = wasEarnedByMe,
-            earnedBy = earnedBy
-        }
-    end
-
-    -- Store with unique key
-    local key = timestamp .. "_" .. (counter or 0)
-    AT.db.rawData[key] = entry
-
-    if AT.db.settings.enableDebug then
-        print(string.format("|cff00ff00[AT Debug]|r Raw data captured: %s", key))
-        print(string.format("  Message: %s", message or "nil"))
-        print(string.format("  Sender: %s", sender or "nil"))
-        print(string.format("  GUID: %s", guid or "nil"))
-    end
-end
 
 -- Event handler
 function AT:OnEvent(event, ...)
@@ -356,9 +246,6 @@ function AT:OnEvent(event, ...)
         end
     elseif event == "CHAT_MSG_ACHIEVEMENT" then
         local message, sender, language, channelString, target, flags, unknown, channelNumber, channelName, unknown2, counter, guid = ...
-
-        -- Capture ALL the raw data first
-        AT:CaptureRawAchievementData(event, message, sender, language, channelString, target, flags, unknown, channelNumber, channelName, unknown2, counter, guid)
 
         local playerName, achievementID, achievementName = AT:ParseAchievementMessage(message, sender)
 
@@ -395,7 +282,7 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
         print("|cffff0000/at debug|r - Toggle debug mode")
         print("|cffff0000/at track <achievementID>|r - Add/remove tracked achievement")
         print("|cffff0000/at config|r - Open settings panel")
-        print("|cffff0000/at rawdata [count]|r - Show recent raw achievement data")
+
         print("|cffff0000/at list|r - Show currently tracked achievements")
         print("|cffff0000/at active <achievementID>|r - Set active achievement for display")
         print("|cffff0000/at show|r - Show/hide the display frame")
@@ -427,9 +314,7 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
             InterfaceOptionsFrame_OpenToCategory("Achievement Tracker") -- Call twice for reliability
         end
 
-    elseif command == "rawdata" then
-        local count = tonumber(args[2]) or 5
-        AT:ShowRawData(count)
+
 
     elseif command == "list" then
         AT:ShowTrackedAchievements()
@@ -499,20 +384,25 @@ function AT:ToggleTrackedAchievement(achievementID)
         end
     end
 
-    local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
-
     if not found then
         table.insert(tracked, achievementID)
-        print(string.format("|cff00ff00[AT]|r Added achievement %d (%s) to tracking list", achievementID, achievementName))
-    else
-        print(string.format("|cff00ff00[AT]|r Removed achievement %d (%s) from tracking list", achievementID, achievementName))
     end
 
-    -- Show current tracking status
-    if #tracked == 0 then
-        print("|cff00ff00[AT]|r Now tracking ALL achievements")
-    else
-        print(string.format("|cff00ff00[AT]|r Now tracking %d specific achievements", #tracked))
+    if AT.db.settings.enableDebug then
+        local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+
+        if not found then
+            print(string.format("|cff00ff00[AT]|r Added achievement %d (%s) to tracking list", achievementID, achievementName))
+        else
+            print(string.format("|cff00ff00[AT]|r Removed achievement %d (%s) from tracking list", achievementID, achievementName))
+        end
+
+        -- Show current tracking status
+        if #tracked == 0 then
+            print("|cff00ff00[AT]|r Now tracking ALL achievements")
+        else
+            print(string.format("|cff00ff00[AT]|r Now tracking %d specific achievements", #tracked))
+        end
     end
 end
 
@@ -541,58 +431,7 @@ function AT:ShowTrackedAchievements()
     end
 end
 
--- Show raw achievement data for analysis
-function AT:ShowRawData(count)
-    if not AT.db.rawData then
-        print("|cffff0000[AT]|r No raw data captured yet.")
-        return
-    end
 
-    -- Sort by timestamp (newest first)
-    local sortedKeys = {}
-    for key, _ in pairs(AT.db.rawData) do
-        table.insert(sortedKeys, key)
-    end
-
-    table.sort(sortedKeys, function(a, b)
-        local timestampA = AT.db.rawData[a].timestamp
-        local timestampB = AT.db.rawData[b].timestamp
-        return timestampA > timestampB
-    end)
-
-    print(string.format("|cff00ff00[AT] Raw Achievement Data (showing %d most recent):|r", math.min(count, #sortedKeys)))
-
-    for i = 1, math.min(count, #sortedKeys) do
-        local key = sortedKeys[i]
-        local data = AT.db.rawData[key]
-
-        print(string.format("|cffff8800Entry %d:|r %s", i, key))
-        print(string.format("  Event: %s", data.event or "nil"))
-        print(string.format("  Message: %s", data.message or "nil"))
-        print(string.format("  Sender: %s", data.sender or "nil"))
-        print(string.format("  GUID: %s", data.guid or "nil"))
-        print(string.format("  Language: %s", data.language or "nil"))
-        print(string.format("  Channel: %s", data.channelString or "nil"))
-        print(string.format("  Flags: %s", tostring(data.flags)))
-        print(string.format("  Group Info: Party=%s, Raid=%s, Size=%d",
-              tostring(data.isInParty), tostring(data.isInRaid), data.groupSize or 0))
-
-        if data.parsedAchievementID then
-            print(string.format("  Parsed: Player=%s, ID=%d, Name=%s",
-                  data.parsedPlayerName or "nil", data.parsedAchievementID, data.parsedAchievementName or "nil"))
-        end
-
-        if data.apiInfo then
-            print(string.format("  API Info: ID=%s, Name=%s, Points=%s, Guild=%s",
-                  tostring(data.apiInfo.id), data.apiInfo.name or "nil",
-                  tostring(data.apiInfo.points), tostring(data.apiInfo.isGuild)))
-        end
-
-        print("") -- Empty line for readability
-    end
-
-    print(string.format("|cff00ff00[AT]|r Total raw entries: %d", #sortedKeys))
-end
 
 -- Create settings panel
 function AT:CreateSettingsPanel()
@@ -685,7 +524,9 @@ function AT:CreateSettingsPanel()
         if newPrefix and newPrefix ~= "" then
             AT.db.settings.displayPrefix = newPrefix
             AT:UpdateDisplayFrame()
-            print(string.format("|cff00ff00[AT]|r Display prefix updated to: '%s'", newPrefix))
+                if AT.db.settings.enableDebug then
+                print(string.format("|cff00ff00[AT]|r Display prefix updated to: '%s'", newPrefix))
+            end
         end
     end)
 
@@ -698,7 +539,9 @@ function AT:CreateSettingsPanel()
         AT.db.settings.displayPrefix = "AotC this season"
         prefixInput:SetText("AotC this season")
         AT:UpdateDisplayFrame()
-        print("|cff00ff00[AT]|r Display prefix reset to default")
+        if AT.db.settings.enableDebug then
+            print("|cff00ff00[AT]|r Display prefix reset to default")
+        end
     end)
 
     -- Font size settings
@@ -777,7 +620,9 @@ function AT:CreateSettingsPanel()
             clearButton:SetText("Clear All Data")
             clearButton:SetScript("OnUpdate", nil)
             UpdateStats()
-            print("|cff00ff00[AT]|r All achievement data has been cleared.")
+            if AT.db.settings.enableDebug then
+                print("|cff00ff00[AT]|r All achievement data has been cleared.")
+            end
         end
     end)
 
@@ -884,7 +729,9 @@ function AT:CreateDisplayFrame()
     -- Update the text
     AT:UpdateDisplayFrame()
 
-    print("|cff00ff00[AT]|r Display frame created successfully using BestFPS pattern!")
+    if AT.db.settings.enableDebug then
+        print("|cff00ff00[AT]|r Display frame created successfully using BestFPS pattern!")
+    end
 end
 
 -- Update the display frame text
@@ -934,29 +781,38 @@ end
 function AT:SetActiveAchievement(achievementID)
     AT.db.settings.activeAchievementID = achievementID
     local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
-    print(string.format("|cff00ff00[AT]|r Set active achievement: [%d] %s", achievementID, achievementName))
+    if AT.db.settings.enableDebug then
+        print(string.format("|cff00ff00[AT]|r Set active achievement: [%d] %s", achievementID, achievementName))
+    end
     AT:UpdateDisplayFrame()
 end
 
 -- Toggle display frame visibility
 function AT:ToggleDisplayFrame()
-    print("|cff00ff00[AT]|r ToggleDisplayFrame called") -- Debug
+    if AT.db.settings.enableDebug then
+        print("|cff00ff00[AT]|r ToggleDisplayFrame called")
+    end
 
     if not AT.displayFrame then
-        print("|cff00ff00[AT]|r Creating display frame...")
+        if AT.db.settings.enableDebug then
+            print("|cff00ff00[AT]|r Creating display frame...")
+        end
         AT:CreateDisplayFrame()
-        print("|cff00ff00[AT]|r Display frame created and shown")
         return
     end
 
     if AT.displayFrame:IsShown() then
         AT.displayFrame:Hide()
         AT.db.settings.displayFrame.visible = false
-        print("|cff00ff00[AT]|r Display frame hidden")
+        if AT.db.settings.enableDebug then
+            print("|cff00ff00[AT]|r Display frame hidden")
+        end
     else
         AT.displayFrame:Show()
         AT.db.settings.displayFrame.visible = true
-        print("|cff00ff00[AT]|r Display frame shown")
+        if AT.db.settings.enableDebug then
+            print("|cff00ff00[AT]|r Display frame shown")
+        end
     end
 end
 
@@ -967,5 +823,7 @@ function AT:ResetDisplayFrame()
     if AT.displayFrame then
         AT.displayFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 100, -100)
     end
-    print("|cff00ff00[AT]|r Display frame position reset")
+    if AT.db.settings.enableDebug then
+        print("|cff00ff00[AT]|r Display frame position reset")
+    end
 end
