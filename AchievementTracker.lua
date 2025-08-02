@@ -170,12 +170,17 @@ end
 
 -- Check if we should track this player (must be in party/raid)
 function AT:ShouldTrackPlayer(playerName)
-    -- Check if player is in our party/raid
-    if UnitInParty(playerName) or UnitInRaid(playerName) then
+    -- Always track if we're in a group (since achievement messages only come from group members)
+    if IsInGroup() then
         return true
     end
 
-    return false
+    -- If not in a group, only track ourselves
+    local myName = UnitName("player")
+    local myServer = GetRealmName()
+    local myFullName = myName .. "-" .. myServer
+
+    return playerName == myName or playerName == myFullName
 end
 
 -- Check if we should track this achievement
@@ -195,11 +200,21 @@ end
 
 -- Record achievement
 function AT:RecordAchievement(playerName, achievementID, achievementName)
+    if AT.db.settings.enableDebug then
+        print(string.format("|cff00ff00[AT]|r Attempting to record: %s earned [%s] (ID: %d)", playerName, achievementName, achievementID))
+    end
+
     if not AT:ShouldTrackPlayer(playerName) then
+        if AT.db.settings.enableDebug then
+            print(string.format("|cffff0000[AT]|r Not tracking player: %s", playerName))
+        end
         return
     end
 
     if not AT:ShouldTrackAchievement(achievementID) then
+        if AT.db.settings.enableDebug then
+            print(string.format("|cffff0000[AT]|r Not tracking achievement ID: %d", achievementID))
+        end
         return
     end
 
