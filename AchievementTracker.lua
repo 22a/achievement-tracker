@@ -720,20 +720,34 @@ end
 -- Create the on-screen display frame
 function AT:CreateDisplayFrame()
     if AT.displayFrame then
-        return -- Already created
+        print("|cff00ff00[AT]|r Display frame already exists")
+        return
     end
 
-    local frame = CreateFrame("Frame", "AchievementTrackerDisplay", UIParent)
-    frame:SetSize(200, 30)
-    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", AT.db.settings.displayFrame.x, AT.db.settings.displayFrame.y)
-    frame:SetFrameStrata("MEDIUM")
-    frame:SetFrameLevel(100)
+    print("|cff00ff00[AT]|r Creating display frame...")
 
-    -- Background
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0.7)
-    frame.bg = bg
+    -- Create main frame using BackdropTemplate like BestFPS
+    local frame = CreateFrame("Frame", "AchievementTrackerDisplay", UIParent, "BackdropTemplate")
+    frame:SetSize(200, 30)
+    frame:SetPoint("TOPLEFT", AT.db.settings.displayFrame.x, AT.db.settings.displayFrame.y)
+    frame:SetClampedToScreen(true)
+
+    -- Set backdrop (background and border)
+    frame:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.8)
+    frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+
+    -- Enable mouse interaction
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
 
     -- Text
     local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -741,33 +755,38 @@ function AT:CreateDisplayFrame()
     text:SetTextColor(1, 1, 1, 1)
     frame.text = text
 
-    -- Make it movable (only when holding Shift)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function(self)
-        if IsShiftKeyDown() then
+    -- Mouse handlers (like BestFPS)
+    local function OnMouseDown(self, button)
+        if IsShiftKeyDown() and button == "LeftButton" then
             self:StartMoving()
         end
-    end)
-    frame:SetScript("OnDragStop", function(self)
+    end
+
+    local function OnMouseUp(self, button)
         self:StopMovingOrSizing()
         -- Save position
         local point, _, _, x, y = self:GetPoint()
         AT.db.settings.displayFrame.x = x
         AT.db.settings.displayFrame.y = y
-    end)
+    end
 
-    -- Add tooltip to show how to move it
-    frame:SetScript("OnEnter", function(self)
+    -- Tooltip handlers
+    local function OnEnter(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Achievement Tracker", 1, 1, 1)
-        GameTooltip:AddLine("Hold Shift + Drag to move", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Hold |cffffffffShift|r + Drag to move", nil, nil, nil, true)
         GameTooltip:Show()
-    end)
-    frame:SetScript("OnLeave", function(self)
+    end
+
+    local function OnLeave(self)
         GameTooltip:Hide()
-    end)
+    end
+
+    -- Attach event handlers
+    frame:SetScript("OnMouseDown", OnMouseDown)
+    frame:SetScript("OnMouseUp", OnMouseUp)
+    frame:SetScript("OnEnter", OnEnter)
+    frame:SetScript("OnLeave", OnLeave)
 
     -- Show/hide based on settings
     if AT.db.settings.displayFrame.visible then
@@ -778,6 +797,8 @@ function AT:CreateDisplayFrame()
 
     AT.displayFrame = frame
     AT:UpdateDisplayFrame()
+
+    print("|cff00ff00[AT]|r Display frame created successfully!")
 end
 
 -- Update the display frame text
