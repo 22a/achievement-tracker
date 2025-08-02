@@ -39,6 +39,9 @@ function AT:Initialize()
     AT.db = AchievementTrackerDB
     
     print("|cff00ff00Achievement Tracker|r loaded. Type |cffff0000/at help|r for commands.")
+
+    -- Create settings panel
+    AT:CreateSettingsPanel()
 end
 
 -- Parse achievement message from chat
@@ -188,7 +191,7 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
         print("|cffff0000/at stats|r - Show overall achievement stats")
         print("|cffff0000/at debug|r - Toggle debug mode")
         print("|cffff0000/at track <achievementID>|r - Add/remove tracked achievement")
-        print("|cffff0000/at clear|r - Clear all data (with confirmation)")
+        print("|cffff0000/at config|r - Open settings panel")
 
     elseif command == "stats" then
         AT:ShowOverallStats()
@@ -206,13 +209,10 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
             print("|cffff0000Usage:|r /at track <achievementID>")
         end
 
-    elseif command == "clear" then
-        print("|cffff0000WARNING:|r This will clear all tracked achievement data!")
-        print("Type |cffff0000/at confirmclear|r to confirm.")
-
-    elseif command == "confirmclear" then
-        AT.db.achievements = {}
-        print("|cff00ff00[AT]|r All achievement data cleared.")
+    elseif command == "config" then
+        -- Open the settings panel
+        InterfaceOptionsFrame_OpenToCategory("Achievement Tracker")
+        InterfaceOptionsFrame_OpenToCategory("Achievement Tracker") -- Call twice for reliability
 
     else
         print("|cffff0000Unknown command.|r Type |cffff0000/at help|r for help.")
@@ -270,4 +270,97 @@ function AT:ToggleTrackedAchievement(achievementID)
     else
         print(string.format("|cff00ff00[AT]|r Removed achievement %d from tracking list", achievementID))
     end
+end
+
+-- Create settings panel
+function AT:CreateSettingsPanel()
+    local panel = CreateFrame("Frame", "AchievementTrackerSettingsPanel", UIParent)
+    panel.name = "Achievement Tracker"
+
+    -- Title
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("Achievement Tracker Settings")
+
+    -- Stats display
+    local statsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    statsLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -20)
+    statsLabel:SetText("Current Statistics:")
+
+    local statsText = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    statsText:SetPoint("TOPLEFT", statsLabel, "BOTTOMLEFT", 0, -10)
+    statsText:SetJustifyH("LEFT")
+
+    -- Update stats function
+    local function UpdateStats()
+        local totalAchievements = 0
+        local totalPlayers = 0
+        local playerSet = {}
+
+        for achievementID, players in pairs(AT.db.achievements) do
+            totalAchievements = totalAchievements + 1
+            for playerKey, _ in pairs(players) do
+                playerSet[playerKey] = true
+            end
+        end
+
+        for _ in pairs(playerSet) do
+            totalPlayers = totalPlayers + 1
+        end
+
+        local statsString = string.format("%d unique achievements tracked\n%d unique players tracked",
+                                        totalAchievements, totalPlayers)
+        statsText:SetText(statsString)
+    end
+
+    -- Clear data section
+    local clearLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    clearLabel:SetPoint("TOPLEFT", statsText, "BOTTOMLEFT", 0, -30)
+    clearLabel:SetText("Danger Zone:")
+
+    local clearWarning = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    clearWarning:SetPoint("TOPLEFT", clearLabel, "BOTTOMLEFT", 0, -10)
+    clearWarning:SetText("This will permanently delete ALL tracked achievement data!")
+    clearWarning:SetTextColor(1, 0.5, 0.5) -- Light red
+
+    -- Clear button
+    local clearButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    clearButton:SetSize(150, 25)
+    clearButton:SetPoint("TOPLEFT", clearWarning, "BOTTOMLEFT", 0, -10)
+    clearButton:SetText("Clear All Data")
+
+    -- Confirmation state
+    local confirmationPending = false
+
+    clearButton:SetScript("OnClick", function()
+        if not confirmationPending then
+            -- First click - ask for confirmation
+            confirmationPending = true
+            clearButton:SetText("Click Again to Confirm")
+            clearButton:SetScript("OnUpdate", function(self, elapsed)
+                -- Reset after 5 seconds
+                self.timer = (self.timer or 0) + elapsed
+                if self.timer >= 5 then
+                    confirmationPending = false
+                    clearButton:SetText("Clear All Data")
+                    clearButton:SetScript("OnUpdate", nil)
+                    self.timer = nil
+                end
+            end)
+        else
+            -- Second click - actually clear
+            AT.db.achievements = {}
+            confirmationPending = false
+            clearButton:SetText("Clear All Data")
+            clearButton:SetScript("OnUpdate", nil)
+            UpdateStats()
+            print("|cff00ff00[AT]|r All achievement data has been cleared.")
+        end
+    end)
+
+    -- Update stats when panel is shown
+    panel:SetScript("OnShow", UpdateStats)
+
+    -- Add to Interface Options
+    InterfaceOptions_AddCategory(panel)
 end
