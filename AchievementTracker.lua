@@ -267,6 +267,7 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
         print("|cffff0000/at track <achievementID>|r - Add/remove tracked achievement")
         print("|cffff0000/at config|r - Open settings panel")
         print("|cffff0000/at rawdata [count]|r - Show recent raw achievement data")
+        print("|cffff0000/at list|r - Show currently tracked achievements")
 
     elseif command == "stats" then
         AT:ShowOverallStats()
@@ -297,6 +298,9 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
     elseif command == "rawdata" then
         local count = tonumber(args[2]) or 5
         AT:ShowRawData(count)
+
+    elseif command == "list" then
+        AT:ShowTrackedAchievements()
 
     else
         print("|cffff0000Unknown command.|r Type |cffff0000/at help|r for help.")
@@ -348,11 +352,34 @@ function AT:ToggleTrackedAchievement(achievementID)
         end
     end
 
+    local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+
     if not found then
         table.insert(tracked, achievementID)
-        print(string.format("|cff00ff00[AT]|r Added achievement %d to tracking list", achievementID))
+        print(string.format("|cff00ff00[AT]|r Added achievement %d (%s) to tracking list", achievementID, achievementName))
     else
-        print(string.format("|cff00ff00[AT]|r Removed achievement %d from tracking list", achievementID))
+        print(string.format("|cff00ff00[AT]|r Removed achievement %d (%s) from tracking list", achievementID, achievementName))
+    end
+
+    -- Show current tracking status
+    if #tracked == 0 then
+        print("|cff00ff00[AT]|r Now tracking ALL achievements")
+    else
+        print(string.format("|cff00ff00[AT]|r Now tracking %d specific achievements", #tracked))
+    end
+end
+
+function AT:ShowTrackedAchievements()
+    local tracked = AT.db.settings.trackedAchievements
+
+    if #tracked == 0 then
+        print("|cff00ff00[AT]|r Currently tracking ALL achievements")
+    else
+        print(string.format("|cff00ff00[AT]|r Currently tracking %d specific achievements:", #tracked))
+        for _, achievementID in ipairs(tracked) do
+            local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
+            print(string.format("  [%d] %s", achievementID, achievementName))
+        end
     end
 end
 
@@ -433,7 +460,9 @@ function AT:CreateSettingsPanel()
         local totalAchievements = 0
         local totalPlayers = 0
         local playerSet = {}
+        local statsLines = {}
 
+        -- Overall stats
         for achievementID, players in pairs(AT.db.achievements) do
             totalAchievements = totalAchievements + 1
             for playerKey, _ in pairs(players) do
@@ -445,9 +474,35 @@ function AT:CreateSettingsPanel()
             totalPlayers = totalPlayers + 1
         end
 
-        local statsString = string.format("%d unique achievements tracked\n%d unique players tracked",
-                                        totalAchievements, totalPlayers)
-        statsText:SetText(statsString)
+        table.insert(statsLines, string.format("Overall: %d achievements, %d unique players", totalAchievements, totalPlayers))
+        table.insert(statsLines, "")
+
+        -- Individual achievement stats
+        if totalAchievements > 0 then
+            table.insert(statsLines, "Individual Achievement Counts:")
+
+            -- Sort achievements by count (highest first)
+            local sortedAchievements = {}
+            for achievementID, players in pairs(AT.db.achievements) do
+                local count = 0
+                for _ in pairs(players) do
+                    count = count + 1
+                end
+                table.insert(sortedAchievements, {id = achievementID, count = count})
+            end
+
+            table.sort(sortedAchievements, function(a, b) return a.count > b.count end)
+
+            for _, achievement in ipairs(sortedAchievements) do
+                local achievementName = select(2, GetAchievementInfo(achievement.id)) or "Unknown"
+                table.insert(statsLines, string.format("  [%d] %s: %d players",
+                    achievement.id, achievementName, achievement.count))
+            end
+        else
+            table.insert(statsLines, "No achievements tracked yet.")
+        end
+
+        statsText:SetText(table.concat(statsLines, "\n"))
     end
 
     -- Clear data section
