@@ -368,8 +368,13 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
     for word in string.gmatch(msg, "%S+") do
         table.insert(args, word)
     end
-    
+
     local command = args[1] and string.lower(args[1]) or "help"
+
+    -- Debug output
+    if command == "show" then
+        print("|cff00ff00[AT Debug]|r Received 'show' command")
+    end
     
     if command == "help" then
         print("|cff00ff00Achievement Tracker Commands:|r")
@@ -698,6 +703,8 @@ function AT:CreateDisplayFrame()
     local frame = CreateFrame("Frame", "AchievementTrackerDisplay", UIParent)
     frame:SetSize(200, 30)
     frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", AT.db.settings.displayFrame.x, AT.db.settings.displayFrame.y)
+    frame:SetFrameStrata("MEDIUM")
+    frame:SetFrameLevel(100)
 
     -- Background
     local bg = frame:CreateTexture(nil, "BACKGROUND")
@@ -779,8 +786,12 @@ end
 
 -- Toggle display frame visibility
 function AT:ToggleDisplayFrame()
+    print("|cff00ff00[AT]|r ToggleDisplayFrame called") -- Debug
+
     if not AT.displayFrame then
+        print("|cff00ff00[AT]|r Creating display frame...")
         AT:CreateDisplayFrame()
+        print("|cff00ff00[AT]|r Display frame created and shown")
         return
     end
 
