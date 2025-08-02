@@ -11,6 +11,7 @@ AT.db = nil
 -- Default database structure
 local defaultDB = {
     achievements = {}, -- [achievementID] = { ["PlayerName-ServerName"] = timestamp }
+    rawData = {}, -- Store all raw achievement data for analysis
     settings = {
         enableDebug = false,
         trackedAchievements = {}, -- specific achievement IDs to track (empty = track all)
@@ -153,6 +154,75 @@ function AT:GetPlayerServer(playerName)
     return nil -- Couldn't determine server
 end
 
+-- Capture all raw achievement data for analysis
+function AT:CaptureRawAchievementData(event, message, sender, language, channelString, target, flags, unknown, channelNumber, channelName, unknown2, counter, guid)
+    -- Initialize raw data storage
+    if not AT.db.rawData then
+        AT.db.rawData = {}
+    end
+
+    local timestamp = time()
+    local entry = {
+        timestamp = timestamp,
+        event = event,
+        message = message,
+        sender = sender,
+        language = language,
+        channelString = channelString,
+        target = target,
+        flags = flags,
+        unknown = unknown,
+        channelNumber = channelNumber,
+        channelName = channelName,
+        unknown2 = unknown2,
+        counter = counter,
+        guid = guid,
+        -- Additional context
+        playerServer = GetRealmName(),
+        isInParty = IsInGroup(LE_PARTY_CATEGORY_HOME),
+        isInRaid = IsInRaid(LE_PARTY_CATEGORY_HOME),
+        groupSize = GetNumGroupMembers(),
+    }
+
+    -- Try to extract achievement info
+    local playerName, achievementID, achievementName = AT:ParseAchievementMessage(message, sender)
+    if achievementID then
+        entry.parsedPlayerName = playerName
+        entry.parsedAchievementID = achievementID
+        entry.parsedAchievementName = achievementName
+
+        -- Get additional achievement info from API
+        local id, name, points, completed, month, day, year, description, flags, icon, rewardText, isGuild, wasEarnedByMe, earnedBy = GetAchievementInfo(achievementID)
+        entry.apiInfo = {
+            id = id,
+            name = name,
+            points = points,
+            completed = completed,
+            month = month,
+            day = day,
+            year = year,
+            description = description,
+            flags = flags,
+            icon = icon,
+            rewardText = rewardText,
+            isGuild = isGuild,
+            wasEarnedByMe = wasEarnedByMe,
+            earnedBy = earnedBy
+        }
+    end
+
+    -- Store with unique key
+    local key = timestamp .. "_" .. (counter or 0)
+    AT.db.rawData[key] = entry
+
+    if AT.db.settings.enableDebug then
+        print(string.format("|cff00ff00[AT Debug]|r Raw data captured: %s", key))
+        print(string.format("  Message: %s", message or "nil"))
+        print(string.format("  Sender: %s", sender or "nil"))
+        print(string.format("  GUID: %s", guid or "nil"))
+    end
+end
+
 -- Event handler
 function AT:OnEvent(event, ...)
     if event == "ADDON_LOADED" then
@@ -161,9 +231,13 @@ function AT:OnEvent(event, ...)
             AT:Initialize()
         end
     elseif event == "CHAT_MSG_ACHIEVEMENT" then
-        local message, sender = ...
+        local message, sender, language, channelString, target, flags, unknown, channelNumber, channelName, unknown2, counter, guid = ...
+
+        -- Capture ALL the raw data first
+        AT:CaptureRawAchievementData(event, message, sender, language, channelString, target, flags, unknown, channelNumber, channelName, unknown2, counter, guid)
+
         local playerName, achievementID, achievementName = AT:ParseAchievementMessage(message, sender)
-        
+
         if playerName and achievementID and achievementName then
             AT:RecordAchievement(playerName, achievementID, achievementName)
         end
@@ -192,6 +266,7 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
         print("|cffff0000/at debug|r - Toggle debug mode")
         print("|cffff0000/at track <achievementID>|r - Add/remove tracked achievement")
         print("|cffff0000/at config|r - Open settings panel")
+        print("|cffff0000/at rawdata [count]|r - Show recent raw achievement data")
 
     elseif command == "stats" then
         AT:ShowOverallStats()
@@ -213,6 +288,10 @@ function SlashCmdList.ACHIEVEMENTTRACKER(msg)
         -- Open the settings panel
         InterfaceOptionsFrame_OpenToCategory("Achievement Tracker")
         InterfaceOptionsFrame_OpenToCategory("Achievement Tracker") -- Call twice for reliability
+
+    elseif command == "rawdata" then
+        local count = tonumber(args[2]) or 5
+        AT:ShowRawData(count)
 
     else
         print("|cffff0000Unknown command.|r Type |cffff0000/at help|r for help.")
@@ -270,6 +349,59 @@ function AT:ToggleTrackedAchievement(achievementID)
     else
         print(string.format("|cff00ff00[AT]|r Removed achievement %d from tracking list", achievementID))
     end
+end
+
+-- Show raw achievement data for analysis
+function AT:ShowRawData(count)
+    if not AT.db.rawData then
+        print("|cffff0000[AT]|r No raw data captured yet.")
+        return
+    end
+
+    -- Sort by timestamp (newest first)
+    local sortedKeys = {}
+    for key, _ in pairs(AT.db.rawData) do
+        table.insert(sortedKeys, key)
+    end
+
+    table.sort(sortedKeys, function(a, b)
+        local timestampA = AT.db.rawData[a].timestamp
+        local timestampB = AT.db.rawData[b].timestamp
+        return timestampA > timestampB
+    end)
+
+    print(string.format("|cff00ff00[AT] Raw Achievement Data (showing %d most recent):|r", math.min(count, #sortedKeys)))
+
+    for i = 1, math.min(count, #sortedKeys) do
+        local key = sortedKeys[i]
+        local data = AT.db.rawData[key]
+
+        print(string.format("|cffff8800Entry %d:|r %s", i, key))
+        print(string.format("  Event: %s", data.event or "nil"))
+        print(string.format("  Message: %s", data.message or "nil"))
+        print(string.format("  Sender: %s", data.sender or "nil"))
+        print(string.format("  GUID: %s", data.guid or "nil"))
+        print(string.format("  Language: %s", data.language or "nil"))
+        print(string.format("  Channel: %s", data.channelString or "nil"))
+        print(string.format("  Flags: %s", tostring(data.flags)))
+        print(string.format("  Group Info: Party=%s, Raid=%s, Size=%d",
+              tostring(data.isInParty), tostring(data.isInRaid), data.groupSize or 0))
+
+        if data.parsedAchievementID then
+            print(string.format("  Parsed: Player=%s, ID=%d, Name=%s",
+                  data.parsedPlayerName or "nil", data.parsedAchievementID, data.parsedAchievementName or "nil"))
+        end
+
+        if data.apiInfo then
+            print(string.format("  API Info: ID=%s, Name=%s, Points=%s, Guild=%s",
+                  tostring(data.apiInfo.id), data.apiInfo.name or "nil",
+                  tostring(data.apiInfo.points), tostring(data.apiInfo.isGuild)))
+        end
+
+        print("") -- Empty line for readability
+    end
+
+    print(string.format("|cff00ff00[AT]|r Total raw entries: %d", #sortedKeys))
 end
 
 -- Create settings panel
