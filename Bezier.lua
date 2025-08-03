@@ -364,8 +364,15 @@ function BZ:GetInstanceAchievements()
         C_Timer.After(2, function()
             -- Check if the scan is still valid or not
             if scanCounterloc == scanCounter then
-                -- Last player to scan was not successful
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Timeout scanning %s", playersToScan[1] and UnitName(playersToScan[1]) or "unknown"))
+                -- Last player to scan was not successful - cache as unknown
+                local playerName = playersToScan[1] and UnitName(playersToScan[1]) or "unknown"
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Timeout scanning %s", playerName))
+
+                -- Cache as unknown if we have an active achievement
+                if BZ.db.settings.activeAchievementID and playerName ~= "unknown" then
+                    BZ:CachePlayerAsUnknown(playerName, BZ.db.settings.activeAchievementID)
+                end
+
                 rescanNeeded = true
                 if playersToScan[1] ~= nil then
                     table.remove(playersToScan, 1)
@@ -380,6 +387,9 @@ function BZ:GetInstanceAchievements()
                         scanInProgress = true
                         BZ:GetPlayersInGroup()
                     end)
+
+                    -- Update display frame
+                    BZ:UpdateDisplayFrame()
                 end
             end
         end)
@@ -448,8 +458,11 @@ function BZ:ProcessInspectAchievementReady(guid)
                         _G["AchievementFrameComparison"]:RegisterEvent("INSPECT_ACHIEVEMENT_READY")
                     end
 
-                    -- Update display
+                    -- Update display frame and settings panel
                     BZ:UpdateDisplayFrame()
+                    if UpdateScanResultsDisplay then
+                        UpdateScanResultsDisplay()
+                    end
                 elseif #playersToScan == 0 and rescanNeeded == true then
                     -- Scan complete but rescan needed (group changed during scan)
                     BZ.debugLog("|cff00ff00[BZ Debug]|r Scan finished but rescan needed. Waiting 10 seconds then trying again")
@@ -464,6 +477,9 @@ function BZ:ProcessInspectAchievementReady(guid)
                         scanInProgress = true
                         BZ:GetPlayersInGroup()
                     end)
+
+                    -- Update display frame
+                    BZ:UpdateDisplayFrame()
                 else
                     -- IAT: Unknown error scenario
                     BZ.debugLog("|cff00ff00[BZ Debug]|r UNKNOWN ERROR in scan completion")
@@ -522,6 +538,9 @@ function BZ:ScanGroupForActiveAchievement()
     BZ.debugLog("|cff00ff00[BZ]|r Starting manual scan")
     scanInProgress = true
     BZ:GetPlayersInGroup()
+
+    -- Update display frame to show scan in progress
+    BZ:UpdateDisplayFrame()
 end
 
 
@@ -1144,20 +1163,15 @@ function BZ:CreateSettingsPanel()
                 yOffset = yOffset + 22
             end
 
-            -- Show unknown players (calculate from group size)
-            local completedCount = #(results.completed or {})
-            local notCompletedCount = #(results.notCompleted or {})
-            local groupSize = BZ:GetGroupSize()
-            local unknownCount = groupSize - completedCount - notCompletedCount
-
-            if unknownCount > 0 then
+            -- Show unknown players (from scan results)
+            for _, playerName in ipairs(results.unknown or {}) do
                 local rowFrame = CreateFrame("Frame", nil, scanResultsContainer)
                 rowFrame:SetSize(480, 22)
                 rowFrame:SetPoint("TOPLEFT", 0, -yOffset)
 
                 local playerText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                 playerText:SetPoint("LEFT", 10, 0)
-                playerText:SetText(string.format("%d other player(s)", unknownCount))
+                playerText:SetText(playerName)
                 playerText:SetTextColor(1, 1, 0.6)
 
                 local statusText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1169,6 +1183,10 @@ function BZ:CreateSettingsPanel()
             end
 
             -- Show summary at bottom
+            local completedCount = #(results.completed or {})
+            local notCompletedCount = #(results.notCompleted or {})
+            local unknownCount = #(results.unknown or {})
+
             yOffset = yOffset + 15
             local summaryText = scanResultsContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             summaryText:SetPoint("TOPLEFT", 0, -yOffset)
