@@ -126,11 +126,14 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
         return
     end
 
+    -- Normalize player name to handle realm suffixes
+    local normalizedPlayerName = BZ:NormalizePlayerName(playerName)
+
     -- Check if this player was in our notCompleted list (players we know for certain didn't have the achievement)
     local shouldCount = false
     if BZ.scanResults[achievementID] and BZ.scanResults[achievementID].notCompleted then
         for _, notCompletedPlayer in ipairs(BZ.scanResults[achievementID].notCompleted) do
-            if notCompletedPlayer == playerName then
+            if notCompletedPlayer == normalizedPlayerName then
                 shouldCount = true
                 break
             end
@@ -138,11 +141,11 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
     end
 
     if not shouldCount then
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Not counting achievement for %s: not in notCompleted list (either already had it or status was unknown)", playerName))
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Not counting achievement for %s (normalized: %s): not in notCompleted list (either already had it or status was unknown)", playerName, normalizedPlayerName))
         return
     end
 
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Counting achievement for %s: confirmed they didn't have it before", playerName))
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Counting achievement for %s (normalized: %s): confirmed they didn't have it before", playerName, normalizedPlayerName))
 
     -- Initialize counter if it doesn't exist
     if not BZ.db.achievements[achievementID] then
@@ -247,6 +250,14 @@ function BZ:has_value(tab, val)
         end
     end
     return false
+end
+
+-- Helper function: Normalize player name (strip realm)
+function BZ:NormalizePlayerName(playerName)
+    if not playerName then return nil end
+    -- Strip realm suffix (everything after the dash)
+    local name = string.match(playerName, "^([^-]+)")
+    return name or playerName
 end
 
 -- IAT: Reset scanning variables (called when leaving world)
