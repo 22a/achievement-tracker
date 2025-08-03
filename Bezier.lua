@@ -1553,6 +1553,11 @@ function BZ:UpdateDisplayFrame()
 
     local line1Text, line2Text
 
+    -- Line 1: Always show total AotC count
+    local count = BZ.db.achievements[activeID] or 0
+    local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
+    line1Text = string.format("%s: %d", prefix, count)
+
     if inGroup then
         -- Check if we have scan results
         local results = BZ.scanResults[activeID]
@@ -1561,21 +1566,14 @@ function BZ:UpdateDisplayFrame()
             local notCompletedCount = #results.notCompleted
             local unknownCount = #(results.unknown or {})
 
-            -- Line 1: Incoming AotC count
-            line1Text = string.format("Incoming AotC: %d", notCompletedCount)
-
-            -- Line 2: Pending scan count
-            line2Text = string.format("Pending scan: %d", unknownCount)
+            -- Line 2: Show incoming and pending counts
+            line2Text = string.format("Incoming: %d | Pending scan: %d", notCompletedCount, unknownCount)
         else
             -- No scan results yet
-            line1Text = "Incoming AotC: ?"
-            line2Text = "Pending scan: ?"
+            line2Text = "Incoming: ? | Pending scan: ?"
         end
     else
-        -- Solo player - show total count
-        local count = BZ.db.achievements[activeID] or 0
-        local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
-        line1Text = string.format("%s: %d", prefix, count)
+        -- Solo player - no second line needed
         line2Text = ""
     end
 
