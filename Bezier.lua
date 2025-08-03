@@ -14,6 +14,7 @@ frame:RegisterEvent("CHAT_MSG_ACHIEVEMENT")
 frame:RegisterEvent("GROUP_ROSTER_UPDATE")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_LEAVING_WORLD")
+frame:RegisterEvent("INSPECT_ACHIEVEMENT_READY")
 
 -- Group scanning variables
 BZ.groupScanInProgress = false
@@ -220,6 +221,11 @@ function BZ:OnEvent(event, ...)
     elseif event == "PLAYER_LEAVING_WORLD" then
         -- Stop periodic scanning when leaving world
         BZ:StopPeriodicScanning()
+    elseif event == "INSPECT_ACHIEVEMENT_READY" then
+        -- Achievement inspection data is ready
+        local guid = ...
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r INSPECT_ACHIEVEMENT_READY fired for GUID: %s", tostring(guid)))
+        -- The achievement data should now be available for GetAchievementComparisonInfo
     end
 end
 
@@ -405,11 +411,10 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
 
         -- Try to scan regardless of connection status (like Instance Achievement Tracker does)
         if true then -- Always try to scan
-            -- Try to request inspection data first (this may help with cross-realm players)
+            -- Try to request inspection data first - this is crucial for achievement data
             if CanInspect(unit) then
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Requesting inspect data for %s", playerName))
                 NotifyInspect(unit)
-                -- Small delay to allow inspection data to load
-                C_Timer.After(0.1, function() end)
             end
 
             -- Set up achievement comparison for this unit
