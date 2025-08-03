@@ -1599,12 +1599,14 @@ function BZ:UpdateDisplayFrame()
             -- Line 2: Show only incoming count
             line2Text = string.format("Incoming: %d", notCompletedCount)
 
-            -- Show spinner if there are unknown/pending scans
-            showSpinner = unknownCount > 0
+            -- Show spinner if scan is in progress OR there are unknown players
+            -- But hide spinner if scan is marked as finished
+            showSpinner = (scanInProgress or unknownCount > 0) and not BZ.scanFinished
         else
             -- No scan results yet
             line2Text = "Incoming: ?"
-            showSpinner = true
+            -- Show spinner if scan is in progress or no results yet (unless we're solo)
+            showSpinner = scanInProgress or (groupSize > 1 and not BZ.scanFinished)
         end
     else
         -- Solo player - no second line needed
