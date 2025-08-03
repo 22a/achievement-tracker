@@ -227,6 +227,18 @@ function BZ:OnEvent(event, ...)
         BZ.currentZone = newZone
 
         BZ.debugLog("|cff00ff00[BZ Debug]|r Player entering world")
+
+        -- Trigger automatic scan if in a group/raid and have active achievement
+        local groupSize = BZ:GetGroupSize()
+        if groupSize > 1 and BZ.db.settings.activeAchievementID then
+            BZ.debugLog("|cff00ff00[BZ Debug]|r In group on login/reload, starting automatic scan")
+            C_Timer.After(2, function() -- Small delay to ensure group data is loaded
+                if not scanInProgress then
+                    scanInProgress = true
+                    BZ:GetPlayersInGroup()
+                end
+            end)
+        end
     elseif event == "PLAYER_LEAVING_WORLD" then
         -- Reset scanning variables when leaving world
         BZ:ResetScanningVariables()
