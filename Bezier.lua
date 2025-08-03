@@ -1557,11 +1557,11 @@ function BZ:UpdateDisplayFrame()
     local groupSize = BZ:GetGroupSize()
     local inGroup = groupSize > 1
 
-    -- Update font size for both lines
+    -- Update font size - configurable for line 1, fixed 12px for line 2
     local fontSize = BZ.db.settings.displayFrame.fontSize or 12
     local fontPath, _, fontFlags = BZ.displayFrame.text1:GetFont()
     BZ.displayFrame.text1:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
-    BZ.displayFrame.text2:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
+    BZ.displayFrame.text2:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", 12, fontFlags or "OUTLINE")
 
     local line1Text, line2Text
 
