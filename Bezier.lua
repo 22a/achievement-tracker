@@ -289,8 +289,7 @@ function BZ:ProcessInspectReady(guid)
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player achievement check: %s", tostring(completed)))
             else
                 SetAchievementComparisonUnit(unit)
-                local _, _, _, otherCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
-                completed = otherCompleted
+                local completed, month, day, year = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
                 ClearAchievementComparisonUnit()
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check: completed=%s", tostring(completed)))
             end
