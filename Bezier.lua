@@ -1497,7 +1497,7 @@ function BZ:CreateDisplayFrame()
 
     -- Create second line text
     local text2 = BZ.displayFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    text2:SetPoint("TOPLEFT", 10, -25)
+    text2:SetPoint("TOPLEFT", 10, -28)
     text2:SetTextColor(1, 1, 1, 1)
     BZ.displayFrame.text2 = text2
 
