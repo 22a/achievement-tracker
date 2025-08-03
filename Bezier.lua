@@ -1501,6 +1501,22 @@ function BZ:CreateDisplayFrame()
     text2:SetTextColor(1, 1, 1, 1)
     BZ.displayFrame.text2 = text2
 
+    -- Create loading spinner
+    local spinner = BZ.displayFrame:CreateTexture(nil, "OVERLAY")
+    spinner:SetSize(12, 12)
+    spinner:SetPoint("LEFT", text2, "RIGHT", 5, 0)
+    spinner:SetTexture("Interface\\Common\\StreamCircle")
+    spinner:Hide()
+    BZ.displayFrame.spinner = spinner
+
+    -- Spinner animation
+    local spinnerAnim = spinner:CreateAnimationGroup()
+    local rotation = spinnerAnim:CreateAnimation("Rotation")
+    rotation:SetDuration(1)
+    rotation:SetDegrees(360)
+    spinnerAnim:SetLooping("REPEAT")
+    BZ.displayFrame.spinnerAnim = spinnerAnim
+
 
 
     -- Mouse handlers
@@ -1570,6 +1586,8 @@ function BZ:UpdateDisplayFrame()
     local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
     line1Text = string.format("%s: %d", prefix, count)
 
+    local showSpinner = false
+
     if inGroup then
         -- Check if we have scan results
         local results = BZ.scanResults[activeID]
@@ -1578,20 +1596,34 @@ function BZ:UpdateDisplayFrame()
             local notCompletedCount = #results.notCompleted
             local unknownCount = #(results.unknown or {})
 
-            -- Line 2: Show incoming and pending counts
-            line2Text = string.format("Incoming: %d | Pending scan: %d", notCompletedCount, unknownCount)
+            -- Line 2: Show only incoming count
+            line2Text = string.format("Incoming: %d", notCompletedCount)
+
+            -- Show spinner if there are unknown/pending scans
+            showSpinner = unknownCount > 0
         else
             -- No scan results yet
-            line2Text = "Incoming: ? | Pending scan: ?"
+            line2Text = "Incoming: ?"
+            showSpinner = true
         end
     else
         -- Solo player - no second line needed
         line2Text = ""
+        showSpinner = false
     end
 
     -- Set text
     BZ.displayFrame.text1:SetText(line1Text)
     BZ.displayFrame.text2:SetText(line2Text)
+
+    -- Show/hide spinner
+    if showSpinner then
+        BZ.displayFrame.spinner:Show()
+        BZ.displayFrame.spinnerAnim:Play()
+    else
+        BZ.displayFrame.spinner:Hide()
+        BZ.displayFrame.spinnerAnim:Stop()
+    end
 
     -- Auto-resize frame based on widest line
     local text1Width = BZ.displayFrame.text1:GetStringWidth()
