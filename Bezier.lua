@@ -383,7 +383,7 @@ function BZ:ScanNextPlayer()
                 BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, completed)
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Got achievement data on timeout for %s: %s", playerName, completed and "completed" or "not_completed"))
             else
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r No achievement data available for %s (cross-realm limitation)", playerName))
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r No achievement data available for %s on timeout", playerName))
                 BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
             end
 
@@ -433,10 +433,24 @@ function BZ:ScanNextPlayer()
                 BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, completed)
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cached result for %s: %s", playerName, completed and "completed" or "not_completed"))
             else
-                -- Cross-realm achievement data is not available - this is a WoW API limitation
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cross-realm achievement data unavailable for %s (WoW API limitation)", playerName))
-                -- Cache as "unknown" so we don't keep trying to scan this player
-                BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
+                -- Try a different approach - clear and re-set comparison unit
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Trying alternative approach for %s", playerName))
+                ClearAchievementComparisonUnit()
+                C_Timer.After(0.1, function()
+                    SetAchievementComparisonUnit(unit)
+                    C_Timer.After(0.2, function()
+                        local _, _, _, altCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
+                        ClearAchievementComparisonUnit()
+
+                        if altCompleted ~= nil then
+                            BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, altCompleted)
+                            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Alternative approach worked for %s: %s", playerName, altCompleted and "completed" or "not_completed"))
+                        else
+                            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Alternative approach also failed for %s", playerName))
+                            BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
+                        end
+                    end)
+                end)
             end
 
             -- Remove from queue and continue
