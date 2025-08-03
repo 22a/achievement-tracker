@@ -387,6 +387,13 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
         -- For other players, try to inspect their achievements
         -- This requires the player to be inspectable and may not always work
         if UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
+            -- Try to request inspection data first (this may help with cross-realm players)
+            if CanInspect(unit) then
+                NotifyInspect(unit)
+                -- Small delay to allow inspection data to load
+                C_Timer.After(0.1, function() end)
+            end
+
             -- Set up achievement comparison for this unit
             SetAchievementComparisonUnit(unit)
 
@@ -418,11 +425,31 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
 
                 return result
             else
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status could not be determined", playerName))
+                -- Provide more detailed reason for failure
+                local unitName = UnitName(unit)
+                local isCrossRealm = unitName and string.find(unitName, "-") ~= nil
+                local canInspect = CanInspect(unit)
+
+                local reason = "unknown reason"
+                if isCrossRealm then
+                    reason = "cross-realm player (achievement data often unavailable)"
+                elseif not canInspect then
+                    reason = "cannot inspect unit (may be out of range)"
+                else
+                    reason = "achievement data not cached by game client"
+                end
+
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status could not be determined (%s)", playerName, reason))
                 return "unknown"
             end
         else
-            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cannot inspect %s (offline or dead)", playerName))
+            local reason = "offline"
+            if UnitIsDeadOrGhost(unit) then
+                reason = "dead or ghost"
+            elseif not UnitIsConnected(unit) then
+                reason = "offline or disconnected"
+            end
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cannot inspect %s (%s)", playerName, reason))
             return "unknown"
         end
     end
@@ -523,6 +550,15 @@ function BZ:CompleteScan()
         end
     else
         BZ.debugLog("|cff00ff00[BZ]|r All scanned players have the achievement!")
+    end
+
+    -- Explain unknown players if there are many
+    if unknownCount > 0 then
+        if unknownCount == groupSize then
+            BZ.debugLog("|cffff8000[BZ]|r Note: Could not scan any players. This usually happens with cross-realm groups or when players are out of range.")
+        elseif unknownCount > groupSize / 2 then
+            BZ.debugLog(string.format("|cffff8000[BZ]|r Note: %d players could not be scanned (likely cross-realm or out of range)", unknownCount))
+        end
     end
 
     -- Update display frame to show scan results
@@ -828,9 +864,15 @@ function BZ:CreateSettingsPanel()
         BZ:ScanGroupForActiveAchievement()
     end)
 
+    -- Scanning limitation note
+    local scanNote = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    scanNote:SetPoint("TOPLEFT", scanButton, "BOTTOMLEFT", 0, -5)
+    scanNote:SetText("Note: Only works reliably for same-realm players in range")
+    scanNote:SetTextColor(0.8, 0.8, 0.8)
+
     -- Players scan results display
     local scanResultsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    scanResultsLabel:SetPoint("TOPLEFT", scanButton, "BOTTOMLEFT", 0, -10)
+    scanResultsLabel:SetPoint("TOPLEFT", scanNote, "BOTTOMLEFT", 0, -10)
     scanResultsLabel:SetText("Scan results (players not completed):")
     scanResultsLabel:SetTextColor(1, 1, 1)
 
@@ -900,7 +942,7 @@ function BZ:CreateSettingsPanel()
 
                 local unknownNote = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 unknownNote:SetPoint("TOPLEFT", 0, -yOffset)
-                unknownNote:SetText(string.format("Note: %d players could not be scanned (offline/dead)", unknownCount))
+                unknownNote:SetText(string.format("Note: %d players could not be scanned (cross-realm/out of range)", unknownCount))
                 unknownNote:SetTextColor(1, 1, 0.6)
                 yOffset = yOffset + 15
             end
