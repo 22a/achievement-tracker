@@ -465,18 +465,24 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
             end
 
             if checkUnit then
-                local name = UnitName(checkUnit)
-                if name and name == playerName then
-                    unit = checkUnit
-                    break
+                local name, realm = UnitFullName(checkUnit)
+                if name then
+                    local fullName = realm and (name .. "-" .. realm) or name
+                    if fullName == playerName then
+                        unit = checkUnit
+                        break
+                    end
                 end
             end
         end
     else
         -- Solo player
-        local name = UnitName("player")
-        if name and name == playerName then
-            unit = "player"
+        local name, realm = UnitFullName("player")
+        if name then
+            local fullName = realm and (name .. "-" .. realm) or name
+            if fullName == playerName then
+                unit = "player"
+            end
         end
     end
 
