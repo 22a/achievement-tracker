@@ -1457,7 +1457,7 @@ function BZ:CreateDisplayFrame()
 
     -- Create the main frame
     BZ.displayFrame = CreateFrame("Frame", "BezierDisplay", UIParent, "BackdropTemplate")
-    BZ.displayFrame:SetSize(200, 30)
+    BZ.displayFrame:SetSize(200, 50)
     BZ.displayFrame:SetPoint("CENTER")
     BZ.displayFrame:SetClampedToScreen(true)
 
@@ -1477,11 +1477,17 @@ function BZ:CreateDisplayFrame()
     BZ.displayFrame:SetMovable(true)
     BZ.displayFrame:RegisterForDrag("LeftButton")
 
-    -- Create text
-    local text = BZ.displayFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    text:SetPoint("LEFT", 10, 0)
-    text:SetTextColor(1, 1, 1, 1)
-    BZ.displayFrame.text = text
+    -- Create first line text
+    local text1 = BZ.displayFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text1:SetPoint("TOPLEFT", 10, -8)
+    text1:SetTextColor(1, 1, 1, 1)
+    BZ.displayFrame.text1 = text1
+
+    -- Create second line text
+    local text2 = BZ.displayFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text2:SetPoint("TOPLEFT", 10, -25)
+    text2:SetTextColor(1, 1, 1, 1)
+    BZ.displayFrame.text2 = text2
 
 
 
@@ -1526,12 +1532,12 @@ function BZ:UpdateDisplayFrame()
 
     local activeID = BZ.db.settings.activeAchievementID
     if not activeID then
-        BZ.displayFrame.text:SetText("No active achievement set")
+        BZ.displayFrame.text1:SetText("No active achievement set")
+        BZ.displayFrame.text2:SetText("")
         -- Auto-resize frame for text only
-        local textWidth = BZ.displayFrame.text:GetStringWidth()
-        local textHeight = BZ.displayFrame.text:GetStringHeight()
+        local textWidth = BZ.displayFrame.text1:GetStringWidth()
         local frameWidth = math.max(textWidth + 20, 80)
-        local frameHeight = math.max(textHeight + 12, 20)
+        local frameHeight = 50
         BZ.displayFrame:SetSize(frameWidth, frameHeight)
         return
     end
@@ -1539,54 +1545,49 @@ function BZ:UpdateDisplayFrame()
     local groupSize = BZ:GetGroupSize()
     local inGroup = groupSize > 1
 
-    -- Update font size
+    -- Update font size for both lines
     local fontSize = BZ.db.settings.displayFrame.fontSize or 12
-    local fontPath, _, fontFlags = BZ.displayFrame.text:GetFont()
-    BZ.displayFrame.text:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
+    local fontPath, _, fontFlags = BZ.displayFrame.text1:GetFont()
+    BZ.displayFrame.text1:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
+    BZ.displayFrame.text2:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
 
-    local displayText
+    local line1Text, line2Text
 
     if inGroup then
         -- Check if we have scan results
         local results = BZ.scanResults[activeID]
 
         if results then
-            local completedCount = #results.completed
             local notCompletedCount = #results.notCompleted
-            local totalScanned = completedCount + notCompletedCount
-            local unknownCount = groupSize - totalScanned
+            local unknownCount = #(results.unknown or {})
 
-            if totalScanned > 0 then
-                -- Show scan results with prefix: PREFIX: COUNT (X/U?/Y format)
-                local count = BZ.db.achievements[activeID] or 0
-                local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
-                displayText = string.format("%s: %d (%d/%d?/%d)", prefix, count, notCompletedCount, unknownCount, groupSize)
-            else
-                -- No scan results yet, show achievement count
-                local count = BZ.db.achievements[activeID] or 0
-                local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
-                displayText = string.format("%s: %d", prefix, count)
-            end
+            -- Line 1: Incoming AotC count
+            line1Text = string.format("Incoming AotC: %d", notCompletedCount)
+
+            -- Line 2: Pending scan count
+            line2Text = string.format("Pending scan: %d", unknownCount)
         else
-            -- No scan results, show achievement count
-            local count = BZ.db.achievements[activeID] or 0
-            local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
-            displayText = string.format("%s: %d", prefix, count)
+            -- No scan results yet
+            line1Text = "Incoming AotC: ?"
+            line2Text = "Pending scan: ?"
         end
     else
-        -- Solo player - show normal count
+        -- Solo player - show total count
         local count = BZ.db.achievements[activeID] or 0
         local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
-        displayText = string.format("%s: %d", prefix, count)
+        line1Text = string.format("%s: %d", prefix, count)
+        line2Text = ""
     end
 
     -- Set text
-    BZ.displayFrame.text:SetText(displayText)
+    BZ.displayFrame.text1:SetText(line1Text)
+    BZ.displayFrame.text2:SetText(line2Text)
 
-    -- Auto-resize frame
-    local textWidth = BZ.displayFrame.text:GetStringWidth()
-    local textHeight = BZ.displayFrame.text:GetStringHeight()
-    local frameWidth = math.max(textWidth + 20, 80)
-    local frameHeight = math.max(textHeight + 12, 20)
+    -- Auto-resize frame based on widest line
+    local text1Width = BZ.displayFrame.text1:GetStringWidth()
+    local text2Width = BZ.displayFrame.text2:GetStringWidth()
+    local maxWidth = math.max(text1Width, text2Width)
+    local frameWidth = math.max(maxWidth + 20, 80)
+    local frameHeight = 50
     BZ.displayFrame:SetSize(frameWidth, frameHeight)
 end
