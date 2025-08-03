@@ -6,6 +6,7 @@ Bezier = BZ
 
 -- Constants
 local DEFAULT_PREFIX = "AotC this season"
+local DEFAULT_INCOMING_PREFIX = "Incoming"
 
 -- Addon event frame
 local frame = CreateFrame("Frame")
@@ -46,6 +47,7 @@ local defaultDB = {
             y = -100,
             visible = true,
             displayPrefix = DEFAULT_PREFIX, -- Customizable prefix for display
+            incomingPrefix = DEFAULT_INCOMING_PREFIX, -- Customizable prefix for incoming count
             fontSize = 12, -- Font size for display frame
             enabled = true, -- Whether to show the display frame at all
         }
@@ -1041,9 +1043,49 @@ function BZ:CreateSettingsPanel()
         BZ.debugLog("|cff00ff00[BZ]|r Display prefix reset to default: '" .. DEFAULT_PREFIX .. "'")
     end)
 
+    -- Incoming Prefix setting
+    local incomingPrefixLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    incomingPrefixLabel:SetPoint("TOPLEFT", prefixInput, "BOTTOMLEFT", 0, -20)
+    incomingPrefixLabel:SetText("Incoming Text Prefix:")
+
+    local incomingPrefixHelp = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    incomingPrefixHelp:SetPoint("TOPLEFT", incomingPrefixLabel, "BOTTOMLEFT", 0, -2)
+    incomingPrefixHelp:SetText("(Text shown before incoming count, e.g., 'Your Text: 3')")
+    incomingPrefixHelp:SetTextColor(0.7, 0.7, 0.7)
+
+    local incomingPrefixInput = CreateFrame("EditBox", nil, generalTab, "InputBoxTemplate")
+    incomingPrefixInput:SetSize(150, 20)
+    incomingPrefixInput:SetPoint("TOPLEFT", incomingPrefixHelp, "BOTTOMLEFT", 0, -5)
+    incomingPrefixInput:SetAutoFocus(false)
+    incomingPrefixInput:SetText(BZ.db.settings.displayFrame.incomingPrefix or DEFAULT_INCOMING_PREFIX)
+
+    local incomingPrefixSaveButton = CreateFrame("Button", nil, generalTab, "UIPanelButtonTemplate")
+    incomingPrefixSaveButton:SetSize(50, 22)
+    incomingPrefixSaveButton:SetPoint("LEFT", incomingPrefixInput, "RIGHT", 5, 0)
+    incomingPrefixSaveButton:SetText("Save")
+    incomingPrefixSaveButton:SetScript("OnClick", function()
+        local newPrefix = incomingPrefixInput:GetText()
+        if newPrefix and newPrefix ~= "" then
+            BZ.db.settings.displayFrame.incomingPrefix = newPrefix
+            BZ:UpdateDisplayFrame()
+            BZ.debugLog("|cff00ff00[BZ]|r Incoming prefix updated to: '" .. newPrefix .. "'")
+        end
+    end)
+
+    local incomingPrefixResetButton = CreateFrame("Button", nil, generalTab, "UIPanelButtonTemplate")
+    incomingPrefixResetButton:SetSize(50, 22)
+    incomingPrefixResetButton:SetPoint("LEFT", incomingPrefixSaveButton, "RIGHT", 5, 0)
+    incomingPrefixResetButton:SetText("Reset")
+    incomingPrefixResetButton:SetScript("OnClick", function()
+        BZ.db.settings.displayFrame.incomingPrefix = DEFAULT_INCOMING_PREFIX
+        incomingPrefixInput:SetText(DEFAULT_INCOMING_PREFIX)
+        BZ:UpdateDisplayFrame()
+        BZ.debugLog("|cff00ff00[BZ]|r Incoming prefix reset to default: '" .. DEFAULT_INCOMING_PREFIX .. "'")
+    end)
+
     -- Font Size setting
     local fontLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    fontLabel:SetPoint("TOPLEFT", prefixInput, "BOTTOMLEFT", 0, -40)
+    fontLabel:SetPoint("TOPLEFT", incomingPrefixInput, "BOTTOMLEFT", 0, -40)
     fontLabel:SetText("Font Size:")
 
     local fontSlider = CreateFrame("Slider", nil, generalTab, "OptionsSliderTemplate")
@@ -1441,6 +1483,7 @@ function BZ:CreateSettingsPanel()
     local function UpdateSettingsValues()
         enableCheckbox:SetChecked(BZ.db.settings.displayFrame.enabled)
         prefixInput:SetText(BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX)
+        incomingPrefixInput:SetText(BZ.db.settings.displayFrame.incomingPrefix or DEFAULT_INCOMING_PREFIX)
         fontSlider:SetValue(BZ.db.settings.displayFrame.fontSize or 12)
         fontSlider.Text:SetText("Size: " .. (BZ.db.settings.displayFrame.fontSize or 12))
         debugCheckbox:SetChecked(BZ.db.settings.enableDebugLogging)
@@ -1602,15 +1645,17 @@ function BZ:UpdateDisplayFrame()
             local notCompletedCount = #results.notCompleted
             local unknownCount = #(results.unknown or {})
 
-            -- Line 2: Show only incoming count
-            line2Text = string.format("Incoming: %d", notCompletedCount)
+            -- Line 2: Show incoming count with configurable prefix
+            local incomingPrefix = BZ.db.settings.displayFrame.incomingPrefix or DEFAULT_INCOMING_PREFIX
+            line2Text = string.format("%s: %d", incomingPrefix, notCompletedCount)
 
             -- Show spinner if scan is in progress OR there are unknown players
             -- But hide spinner if scan is marked as finished
             showSpinner = (scanInProgress or unknownCount > 0) and not BZ.scanFinished
         else
             -- No scan results yet
-            line2Text = "Incoming: ?"
+            local incomingPrefix = BZ.db.settings.displayFrame.incomingPrefix or DEFAULT_INCOMING_PREFIX
+            line2Text = string.format("%s: ?", incomingPrefix)
             -- Show spinner if scan is in progress or no results yet (unless we're solo)
             showSpinner = scanInProgress or (groupSize > 1 and not BZ.scanFinished)
         end
