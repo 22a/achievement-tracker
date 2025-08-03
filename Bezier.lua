@@ -5,7 +5,7 @@ local BZ = {}
 Bezier = BZ
 
 -- Constants
-local DEFAULT_PREFIX = "Bezier this season"
+local DEFAULT_PREFIX = "AotC this season"
 
 -- Addon event frame
 local frame = CreateFrame("Frame")
