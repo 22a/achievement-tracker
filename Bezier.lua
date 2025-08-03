@@ -388,10 +388,24 @@ function BZ:ProcessInspectAchievementReady(guid)
 
         -- Check if this event is for our current scan
         if BZ.currentComparisonUnit == name then
-            -- Make sure the player is still online since achievement scanning may happen some time after scanning players
+            -- IAT: Make sure the player is still online since achievement scanning may happen some time after scanning players
             if UnitExists(playerCurrentlyScanning) then
-                -- Check achievement completion status
-                local completed, _month, _day, _year = GetAchievementComparisonInfo(BZ.db.settings.activeAchievementID)
+                local name2, realm2 = UnitName(playerCurrentlyScanning)
+
+                -- IAT: Check achievement completion status with proper player self-scanning
+                local completed
+                if BZ.currentComparisonUnit == UnitName("player") then
+                    -- IAT: For player themselves, use GetAchievementInfo and check wasEarnedByMe
+                    local _, _, _, completedFlag, _, _, _, _, _, _, _, _, wasEarnedByMe = GetAchievementInfo(BZ.db.settings.activeAchievementID)
+                    completed = wasEarnedByMe
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player self-scan: wasEarnedByMe=%s", tostring(wasEarnedByMe)))
+                else
+                    -- IAT: For other players, use GetAchievementComparisonInfo
+                    local completedFlag, month, day, year = GetAchievementComparisonInfo(BZ.db.settings.activeAchievementID)
+                    completed = completedFlag
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison scan: completed=%s, month=%s, day=%s, year=%s",
+                        tostring(completedFlag), tostring(month), tostring(day), tostring(year)))
+                end
 
                 -- Cache the result
                 BZ:CachePlayerResult(name, BZ.db.settings.activeAchievementID, completed or false)
@@ -441,14 +455,18 @@ function BZ:ProcessInspectAchievementReady(guid)
                         scanInProgress = true
                         BZ:GetPlayersInGroup()
                     end)
+                else
+                    -- IAT: Unknown error scenario
+                    BZ.debugLog("|cff00ff00[BZ Debug]|r UNKNOWN ERROR in scan completion")
                 end
             else
-                -- Player went offline during scan
+                -- IAT: Player went offline during scan - just set rescanNeeded and let scan complete naturally
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player %s went offline during scan", name))
                 rescanNeeded = true
             end
         else
             -- Someone else called the INSPECT_ACHIEVEMENT_READY event
-            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Incorrect INSPECT_ACHIEVEMENT_READY call for %s", name))
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Incorrect INSPECT_ACHIEVEMENT_READY call for %s (expected %s)", name, tostring(BZ.currentComparisonUnit)))
         end
     end
 
