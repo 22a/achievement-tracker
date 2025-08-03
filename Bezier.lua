@@ -13,6 +13,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("CHAT_MSG_ACHIEVEMENT")
 frame:RegisterEvent("GROUP_ROSTER_UPDATE")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_LEAVING_WORLD")
 
 -- Group scanning variables
 BZ.groupScanInProgress = false
@@ -21,6 +22,7 @@ BZ.scanCounter = 0
 BZ.countingAllowlist = {} -- Players we know for certain don't have achievements: [achievementID] = {"player1", "player2"}
 BZ.scanResults = {} -- Scan results and cache: [achievementID] = {completed={}, notCompleted={}, timestamp=time, zone=zone}
 BZ.currentZone = nil -- Track current zone to detect instance changes
+BZ.periodicScanTimer = nil -- Timer for periodic scanning
 
 -- Default database structure
 local defaultDB = {
@@ -192,11 +194,15 @@ function BZ:OnEvent(event, ...)
             BZ:RecordAchievement(playerName, achievementID, achievementName)
         end
     elseif event == "GROUP_ROSTER_UPDATE" then
-        -- Group composition changed, could trigger a rescan if needed
+        -- Group composition changed, start/stop periodic scanning
         BZ.debugLog("|cff00ff00[BZ Debug]|r Group roster updated")
 
-        -- Clear scan results when group changes (but keep cache for same zone)
-        -- We only clear the current scan results, not the entire scanResults cache
+        -- Start or stop periodic scanning based on group status
+        if BZ:GetGroupSize() > 1 and BZ.db.settings.activeAchievementID then
+            BZ:StartPeriodicScanning()
+        else
+            BZ:StopPeriodicScanning()
+        end
 
         -- Update display frame to show/hide scan button
         BZ:UpdateDisplayFrame()
@@ -210,6 +216,9 @@ function BZ:OnEvent(event, ...)
         BZ.currentZone = newZone
 
         BZ.debugLog("|cff00ff00[BZ Debug]|r Player entering world")
+    elseif event == "PLAYER_LEAVING_WORLD" then
+        -- Stop periodic scanning when leaving world
+        BZ:StopPeriodicScanning()
     end
 end
 
@@ -585,6 +594,56 @@ function BZ:ClearCountingAllowlist()
     BZ.debugLog("|cff00ff00[BZ Debug]|r Counting allowlist cleared")
 end
 
+-- Start periodic scanning
+function BZ:StartPeriodicScanning()
+    if BZ.periodicScanTimer then
+        BZ.periodicScanTimer:Cancel()
+    end
+
+    BZ.periodicScanTimer = C_Timer.NewTicker(10, function()
+        BZ:PeriodicScanCheck()
+    end)
+
+    BZ.debugLog("|cff00ff00[BZ Debug]|r Started periodic scanning (every 10 seconds)")
+end
+
+-- Stop periodic scanning
+function BZ:StopPeriodicScanning()
+    if BZ.periodicScanTimer then
+        BZ.periodicScanTimer:Cancel()
+        BZ.periodicScanTimer = nil
+        BZ.debugLog("|cff00ff00[BZ Debug]|r Stopped periodic scanning")
+    end
+end
+
+-- Check if we should perform a periodic scan
+function BZ:PeriodicScanCheck()
+    -- Only scan if we have an active achievement
+    if not BZ.db.settings.activeAchievementID then
+        return
+    end
+
+    -- Only scan if we're in a group
+    if BZ:GetGroupSize() <= 1 then
+        return
+    end
+
+    -- Don't scan if in combat
+    if InCombatLockdown() then
+        BZ.debugLog("|cff00ff00[BZ Debug]|r Skipping periodic scan: in combat")
+        return
+    end
+
+    -- Don't scan if already scanning
+    if BZ.groupScanInProgress then
+        BZ.debugLog("|cff00ff00[BZ Debug]|r Skipping periodic scan: scan already in progress")
+        return
+    end
+
+    BZ.debugLog("|cff00ff00[BZ Debug]|r Performing periodic scan")
+    BZ:ScanGroupForActiveAchievement()
+end
+
 -- Clear scan results (call this when leaving instance)
 function BZ:ClearScanResults()
     BZ.scanResults = {}
@@ -645,6 +704,12 @@ function BZ:SetActiveAchievement(achievementID)
     end
 
     BZ.debugLog(string.format("|cff00ff00[BZ]|r Set active achievement: [%d] %s", achievementID, achievementName))
+
+    -- Start periodic scanning if in a group
+    if BZ:GetGroupSize() > 1 then
+        BZ:StartPeriodicScanning()
+    end
+
     BZ:UpdateDisplayFrame()
 end
 -- Create settings panel
