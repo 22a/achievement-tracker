@@ -288,10 +288,12 @@ function BZ:ProcessInspectReady(guid)
                 completed = playerCompleted
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player achievement check: %s", tostring(completed)))
             else
-                SetAchievementComparisonUnit(unit)
+                -- CRITICAL: Get the data BEFORE clearing the comparison unit
                 local completed, month, day, year = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
+                -- Now it's safe to clear
                 ClearAchievementComparisonUnit()
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check: completed=%s", tostring(completed)))
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check: completed=%s, month=%s, day=%s, year=%s",
+                    tostring(completed), tostring(month), tostring(day), tostring(year)))
             end
 
             -- Cache result
