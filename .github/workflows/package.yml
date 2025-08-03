@@ -19,19 +19,19 @@ jobs:
     - name: Create addon package
       run: |
         # Create the addon directory structure
-        mkdir -p AchievementTracker
+        mkdir -p Bezier
 
         # Copy addon files (exclude git and github files)
-        cp *.toc *.lua AchievementTracker/
+        cp *.toc *.lua Bezier/
 
         # Create the zip file
-        zip -r AchievementTracker.zip AchievementTracker/
+        zip -r Bezier.zip Bezier/
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         name: ${{ github.ref_name }}
-        files: AchievementTracker.zip
+        files: Bezier.zip
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
