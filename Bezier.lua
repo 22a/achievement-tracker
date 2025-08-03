@@ -16,12 +16,11 @@ frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 -- Group scanning variables
 BZ.groupScanInProgress = false
-BZ.playersToScan = {}
-BZ.playersScanned = {}
-BZ.playersMissingAchievement = {} -- Allowlist of players who don't have the active achievement
 BZ.currentScanAchievementID = nil
 BZ.scanCounter = 0
-BZ.preKillStatus = {} -- Store pre-kill achievement status for players
+BZ.countingAllowlist = {} -- Players we know for certain don't have achievements: [achievementID] = {"player1", "player2"}
+BZ.scanResults = {} -- Scan results and cache: [achievementID] = {completed={}, notCompleted={}, timestamp=time, zone=zone}
+BZ.currentZone = nil -- Track current zone to detect instance changes
 
 -- Default database structure
 local defaultDB = {
@@ -116,26 +115,23 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
         return
     end
 
-    -- Check if we have pre-kill status for this achievement and player
-    local isFirstTime = true
-    if BZ.preKillStatus[achievementID] and BZ.preKillStatus[achievementID][playerName] ~= nil then
-        -- We have pre-kill data - compare against it
-        local hadAchievementBefore = BZ.preKillStatus[achievementID][playerName]
-        isFirstTime = not hadAchievementBefore
-
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Pre-kill check for %s: had achievement = %s, counting = %s",
-                  playerName, tostring(hadAchievementBefore), tostring(isFirstTime)))
-    else
-        -- No pre-kill data available - assume it's first time (fallback behavior)
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r No pre-kill data for %s, assuming first time", playerName))
+    -- Check if this player is in our counting allowlist (players we know for certain didn't have the achievement)
+    local shouldCount = false
+    if BZ.countingAllowlist[achievementID] then
+        for _, allowedPlayer in ipairs(BZ.countingAllowlist[achievementID]) do
+            if allowedPlayer == playerName then
+                shouldCount = true
+                break
+            end
+        end
     end
 
-    -- Only count first-time achievements
-    if not isFirstTime then
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Skipping alt completion for %s: [%d] %s (already had achievement)",
-                  playerName, achievementID, achievementName))
+    if not shouldCount then
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Not counting achievement for %s: not in allowlist (either already had it or status was unknown)", playerName))
         return
     end
+
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Counting achievement for %s: confirmed they didn't have it before", playerName))
 
     -- Initialize counter if it doesn't exist
     if not BZ.db.achievements[achievementID] then
@@ -148,6 +144,32 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
     -- Debug output
     BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Recorded first-time achievement for %s: [%d] %s (Total: %d)",
               playerName, achievementID, achievementName, BZ.db.achievements[achievementID]))
+
+    -- Update scan results to reflect that this player now has the achievement
+    if BZ.scanResults[achievementID] then
+        local results = BZ.scanResults[achievementID]
+
+        -- Remove player from notCompleted list if they're there
+        for i, notCompletedPlayer in ipairs(results.notCompleted) do
+            if notCompletedPlayer == playerName then
+                table.remove(results.notCompleted, i)
+                break
+            end
+        end
+
+        -- Add to completed list if not already there
+        local alreadyInCompleted = false
+        for _, completedPlayer in ipairs(results.completed) do
+            if completedPlayer == playerName then
+                alreadyInCompleted = true
+                break
+            end
+        end
+
+        if not alreadyInCompleted then
+            table.insert(results.completed, playerName)
+        end
+    end
 
     -- Update display frame if this is the active achievement
     if BZ.db.settings.activeAchievementID == achievementID then
@@ -173,21 +195,20 @@ function BZ:OnEvent(event, ...)
         -- Group composition changed, could trigger a rescan if needed
         BZ.debugLog("|cff00ff00[BZ Debug]|r Group roster updated")
 
-        -- Clear scan results when group changes
-        BZ.playersScanned = {}
-        BZ.playersMissingAchievement = {}
+        -- Clear scan results when group changes (but keep cache for same zone)
+        -- We only clear the current scan results, not the entire scanResults cache
 
         -- Update display frame to show/hide scan button
         BZ:UpdateDisplayFrame()
-
-        -- Auto-scan if we have an active achievement and are in a group
-        if BZ.db.settings.activeAchievementID and BZ:GetGroupSize() > 1 and not BZ.groupScanInProgress then
-            C_Timer.After(2, function() -- Delay to let group settle
-                BZ:ScanGroupForActiveAchievement()
-            end)
-        end
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Player entered world, could be a good time to scan if in a group
+        -- Player entered world, check if we changed zones and clear cache if needed
+        local newZone = GetZoneText()
+        if BZ.currentZone and BZ.currentZone ~= newZone then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Zone changed from '%s' to '%s', clearing scan results", BZ.currentZone, newZone))
+            BZ:ClearScanResults()
+        end
+        BZ.currentZone = newZone
+
         BZ.debugLog("|cff00ff00[BZ Debug]|r Player entering world")
     end
 end
@@ -258,9 +279,29 @@ function BZ:GetPlayersInGroup()
 end
 
 -- Check if a player has a specific achievement
+-- Returns: "completed", "not_completed", or "unknown"
 function BZ:PlayerHasAchievement(playerName, achievementID)
     if not achievementID then
-        return false
+        return "unknown"
+    end
+
+    -- Check scan results cache first (only for definitive results)
+    if BZ.scanResults[achievementID] then
+        local results = BZ.scanResults[achievementID]
+        -- Check if player is in completed or notCompleted lists (definitive results only)
+        for _, completedPlayer in ipairs(results.completed or {}) do
+            if completedPlayer == playerName then
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Using cached result for %s: completed", playerName))
+                return "completed"
+            end
+        end
+        for _, notCompletedPlayer in ipairs(results.notCompleted or {}) do
+            if notCompletedPlayer == playerName then
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Using cached result for %s: not_completed", playerName))
+                return "not_completed"
+            end
+        end
+        -- If not in either list, we need to scan this player
     end
 
     -- Find the unit for this player
@@ -306,14 +347,32 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
 
     if not unit then
         BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Could not find unit for player: %s", playerName))
-        return false
+        return "unknown"
     end
 
     -- Check if we can inspect this unit's achievements
     if unit == "player" then
         -- Check our own achievements
         local _, _, _, completed = GetAchievementInfo(achievementID)
-        return completed
+        local result = completed and "completed" or "not_completed"
+
+        -- Cache the result in scanResults
+        if not BZ.scanResults[achievementID] then
+            BZ.scanResults[achievementID] = {
+                completed = {},
+                notCompleted = {},
+                timestamp = GetTime(),
+                zone = GetZoneText()
+            }
+        end
+
+        if result == "completed" then
+            table.insert(BZ.scanResults[achievementID].completed, playerName)
+        else
+            table.insert(BZ.scanResults[achievementID].notCompleted, playerName)
+        end
+
+        return result
     else
         -- For other players, try to inspect their achievements
         -- This requires the player to be inspectable and may not always work
@@ -327,12 +386,34 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
             -- Clear the comparison unit
             ClearAchievementComparisonUnit()
 
-            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status: %s", playerName, tostring(completed)))
+            if completed ~= nil then
+                local result = completed and "completed" or "not_completed"
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status: %s", playerName, result))
 
-            return completed or false
+                -- Cache the successful result in scanResults
+                if not BZ.scanResults[achievementID] then
+                    BZ.scanResults[achievementID] = {
+                        completed = {},
+                        notCompleted = {},
+                        timestamp = GetTime(),
+                        zone = GetZoneText()
+                    }
+                end
+
+                if result == "completed" then
+                    table.insert(BZ.scanResults[achievementID].completed, playerName)
+                else
+                    table.insert(BZ.scanResults[achievementID].notCompleted, playerName)
+                end
+
+                return result
+            else
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status could not be determined", playerName))
+                return "unknown"
+            end
         else
             BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cannot inspect %s (offline or dead)", playerName))
-            return false -- Assume they don't have it if we can't check
+            return "unknown"
         end
     end
 end
@@ -351,49 +432,51 @@ function BZ:ScanGroupForActiveAchievement()
     end
 
     BZ.groupScanInProgress = true
-    BZ.playersToScan = {}
-    BZ.playersScanned = {}
-    BZ.playersMissingAchievement = {}
     BZ.currentScanAchievementID = activeID
     BZ.scanCounter = BZ.scanCounter + 1
 
     local players = BZ:GetPlayersInGroup()
     local achievementName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
 
-    BZ.debugLog(string.format("|cff00ff00[BZ]|r Scanning %d players for achievement: %s", #players, achievementName))
+    -- Initialize scan results for this achievement
+    if not BZ.scanResults[activeID] then
+        BZ.scanResults[activeID] = {
+            completed = {},
+            notCompleted = {},
+            timestamp = GetTime(),
+            zone = GetZoneText()
+        }
+    end
 
-    -- Add all players to scan list
+    -- Separate players into those we need to scan vs those we have cached
+    local playersToScan = {}
+    local cachedResults = 0
+    local results = BZ.scanResults[activeID]
+
+    -- Clear current results but preserve structure
+    results.completed = {}
+    results.notCompleted = {}
+    results.timestamp = GetTime()
+
     for _, playerName in ipairs(players) do
-        table.insert(BZ.playersToScan, playerName)
+        -- This will populate the results through PlayerHasAchievement calls
+        local status = BZ:PlayerHasAchievement(playerName, activeID)
+
+        if status ~= "unknown" then
+            cachedResults = cachedResults + 1
+        else
+            table.insert(playersToScan, playerName)
+        end
     end
 
-    -- Start scanning
-    BZ:ProcessNextPlayerScan()
-end
-
--- Process the next player in the scan queue
-function BZ:ProcessNextPlayerScan()
-    if #BZ.playersToScan == 0 then
-        -- Scanning complete
-        BZ:CompleteScan()
-        return
+    if cachedResults > 0 then
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Using %d cached results, need to scan %d unknown players for achievement: %s", cachedResults, #playersToScan, achievementName))
+    else
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Scanning %d players for achievement: %s", #players, achievementName))
     end
 
-    local playerName = table.remove(BZ.playersToScan, 1)
-    local hasAchievement = BZ:PlayerHasAchievement(playerName, BZ.currentScanAchievementID)
-
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s has achievement: %s", playerName, tostring(hasAchievement)))
-
-    table.insert(BZ.playersScanned, playerName)
-
-    if not hasAchievement then
-        table.insert(BZ.playersMissingAchievement, playerName)
-    end
-
-    -- Continue with next player
-    C_Timer.After(0.1, function()
-        BZ:ProcessNextPlayerScan()
-    end)
+    -- Scanning is now complete since PlayerHasAchievement populated the results
+    BZ:CompleteScan()
 end
 
 -- Complete the group scan and display results
@@ -401,83 +484,111 @@ function BZ:CompleteScan()
     BZ.groupScanInProgress = false
 
     local achievementName = select(2, GetAchievementInfo(BZ.currentScanAchievementID)) or "Unknown Achievement"
-    local totalPlayers = #BZ.playersScanned
-    local missingCount = #BZ.playersMissingAchievement
+    local results = BZ.scanResults[BZ.currentScanAchievementID]
 
-    BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan complete: %d/%d players missing %s", missingCount, totalPlayers, achievementName))
+    if not results then
+        BZ.debugLog("|cff00ff00[BZ]|r Scan completed but no results found")
+        return
+    end
 
-    if missingCount > 0 then
-        BZ.debugLog("|cff00ff00[BZ]|r Players missing the achievement:")
-        for _, playerName in ipairs(BZ.playersMissingAchievement) do
+    local completedCount = #results.completed
+    local notCompletedCount = #results.notCompleted
+    local totalScanned = completedCount + notCompletedCount
+    local groupSize = BZ:GetGroupSize()
+    local unknownCount = groupSize - totalScanned
+
+    BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan complete: %d completed, %d not completed, %d unknown, %d total for %s", completedCount, notCompletedCount, unknownCount, groupSize, achievementName))
+
+    if notCompletedCount > 0 then
+        BZ.debugLog("|cff00ff00[BZ]|r Players not completed the achievement:")
+        for _, playerName in ipairs(results.notCompleted) do
             BZ.debugLog(string.format("  - %s", playerName))
         end
     else
-        BZ.debugLog("|cff00ff00[BZ]|r All players have the achievement!")
+        BZ.debugLog("|cff00ff00[BZ]|r All scanned players have the achievement!")
     end
 
     -- Update display frame to show scan results
     BZ:UpdateDisplayFrame()
 end
 
--- Get the current allowlist of players missing the active achievement
-function BZ:GetPlayersMissingActiveAchievement()
-    return BZ.playersMissingAchievement
+-- Get the current scan results for the active achievement
+function BZ:GetActiveScanResults()
+    local activeID = BZ.db.settings.activeAchievementID
+    return activeID and BZ.scanResults[activeID] or nil
 end
 
--- Print the current allowlist to chat
-function BZ:PrintAllowlist()
+-- Print the current scan results to chat
+function BZ:PrintScanResults()
     local activeID = BZ.db.settings.activeAchievementID
     if not activeID then
         BZ.debugLog("|cffff0000[BZ]|r No active achievement set")
         return
     end
 
-    local achievementName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
-    local missingCount = #BZ.playersMissingAchievement
+    local results = BZ.scanResults[activeID]
+    if not results then
+        BZ.debugLog("|cffff0000[BZ]|r No scan results available")
+        return
+    end
 
-    if missingCount == 0 then
-        BZ.debugLog(string.format("|cff00ff00[BZ]|r Allowlist: No players missing %s", achievementName))
+    local achievementName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
+    local notCompletedCount = #results.notCompleted
+
+    if notCompletedCount == 0 then
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan results: No players not completed %s", achievementName))
     else
-        BZ.debugLog(string.format("|cff00ff00[BZ]|r Allowlist for %s (%d players):", achievementName, missingCount))
-        for _, playerName in ipairs(BZ.playersMissingAchievement) do
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan results for %s (%d players not completed):", achievementName, notCompletedCount))
+        for _, playerName in ipairs(results.notCompleted) do
             BZ.debugLog(string.format("  - %s", playerName))
         end
     end
 end
 
--- Capture pre-kill achievement status for all group members
-function BZ:CapturePreKillStatus(achievementID)
+-- Populate counting allowlist based on current scan results
+function BZ:PopulateCountingAllowlist(achievementID)
     if not achievementID then
         achievementID = BZ.db.settings.activeAchievementID
     end
 
     if not achievementID then
-        BZ.debugLog("|cff00ff00[BZ Debug]|r No achievement ID provided for pre-kill status")
+        BZ.debugLog("|cff00ff00[BZ Debug]|r No achievement ID provided for counting allowlist")
         return
     end
 
-    -- Initialize pre-kill status table for this achievement
-    if not BZ.preKillStatus[achievementID] then
-        BZ.preKillStatus[achievementID] = {}
+    -- Initialize counting allowlist for this achievement
+    BZ.countingAllowlist[achievementID] = {}
+
+    local results = BZ.scanResults[achievementID]
+    if not results then
+        BZ.debugLog("|cff00ff00[BZ Debug]|r No scan results available for counting allowlist")
+        return
     end
 
-    local players = BZ:GetPlayersInGroup()
     local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
 
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Capturing pre-kill status for %s", achievementName))
+    -- Only add players we confirmed have not completed the achievement
+    for _, playerName in ipairs(results.notCompleted) do
+        table.insert(BZ.countingAllowlist[achievementID], playerName)
+    end
 
-    for _, playerName in ipairs(players) do
-        local hasAchievement = BZ:PlayerHasAchievement(playerName, achievementID)
-        BZ.preKillStatus[achievementID][playerName] = hasAchievement
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Counting allowlist for %s: %d players eligible for counting", achievementName, #BZ.countingAllowlist[achievementID]))
 
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Pre-kill: %s had achievement = %s", playerName, tostring(hasAchievement)))
+    for _, playerName in ipairs(BZ.countingAllowlist[achievementID]) do
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r  - %s", playerName))
     end
 end
 
--- Clear pre-kill status (call this when leaving instance or resetting)
-function BZ:ClearPreKillStatus()
-    BZ.preKillStatus = {}
-    BZ.debugLog("|cff00ff00[BZ Debug]|r Pre-kill status cleared")
+-- Clear counting allowlist (call this when leaving instance or resetting)
+function BZ:ClearCountingAllowlist()
+    BZ.countingAllowlist = {}
+    BZ.debugLog("|cff00ff00[BZ Debug]|r Counting allowlist cleared")
+end
+
+-- Clear scan results (call this when leaving instance)
+function BZ:ClearScanResults()
+    BZ.scanResults = {}
+    BZ.debugLog("|cff00ff00[BZ Debug]|r Scan results cleared")
 end
 
 
@@ -682,60 +793,96 @@ function BZ:CreateSettingsPanel()
         BZ:ScanGroupForActiveAchievement()
     end)
 
-    -- Players missing achievement display
-    local missingLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    missingLabel:SetPoint("TOPLEFT", scanButton, "BOTTOMLEFT", 0, -10)
-    missingLabel:SetText("Players missing active achievement:")
-    missingLabel:SetTextColor(1, 1, 1)
+    -- Players scan results display
+    local scanResultsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    scanResultsLabel:SetPoint("TOPLEFT", scanButton, "BOTTOMLEFT", 0, -10)
+    scanResultsLabel:SetText("Scan results (players not completed):")
+    scanResultsLabel:SetTextColor(1, 1, 1)
 
-    -- Scrollable list for missing players
-    local missingScrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    missingScrollFrame:SetSize(300, 80)
-    missingScrollFrame:SetPoint("TOPLEFT", missingLabel, "BOTTOMLEFT", 0, -5)
+    -- Scrollable list for scan results
+    local scanResultsScrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scanResultsScrollFrame:SetSize(300, 80)
+    scanResultsScrollFrame:SetPoint("TOPLEFT", scanResultsLabel, "BOTTOMLEFT", 0, -5)
 
-    local missingScrollChild = CreateFrame("Frame", nil, missingScrollFrame)
-    missingScrollChild:SetSize(280, 1)
-    missingScrollFrame:SetScrollChild(missingScrollChild)
+    local scanResultsScrollChild = CreateFrame("Frame", nil, scanResultsScrollFrame)
+    scanResultsScrollChild:SetSize(280, 1)
+    scanResultsScrollFrame:SetScrollChild(scanResultsScrollChild)
 
-    -- Function to update missing players display
-    local function UpdateMissingPlayersDisplay()
+    -- Function to update scan results display
+    local function UpdateScanResultsDisplay()
         -- Clear existing children
-        local children = {missingScrollChild:GetChildren()}
+        local children = {scanResultsScrollChild:GetChildren()}
         for i = 1, #children do
             children[i]:Hide()
             children[i]:SetParent(nil)
         end
 
         local yOffset = 0
+        local activeID = BZ.db.settings.activeAchievementID
+        local results = activeID and BZ.scanResults[activeID]
 
-        if #BZ.playersMissingAchievement == 0 then
-            local noPlayersText = missingScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            noPlayersText:SetPoint("TOPLEFT", 0, -yOffset)
-            noPlayersText:SetText("No players missing achievement (scan needed)")
-            noPlayersText:SetTextColor(0.7, 0.7, 0.7)
+        if not results then
+            local noScanText = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            noScanText:SetPoint("TOPLEFT", 0, -yOffset)
+            noScanText:SetText("No scan performed yet - click Scan button")
+            noScanText:SetTextColor(0.7, 0.7, 0.7)
             yOffset = yOffset + 15
         else
-            for _, playerName in ipairs(BZ.playersMissingAchievement) do
-                local playerText = missingScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                playerText:SetPoint("TOPLEFT", 0, -yOffset)
-                playerText:SetText("• " .. playerName)
-                playerText:SetTextColor(1, 0.8, 0.8)
+            local completedCount = #results.completed
+            local notCompletedCount = #results.notCompleted
+            local groupSize = BZ:GetGroupSize()
+            local unknownCount = groupSize - completedCount - notCompletedCount
+
+            -- Show summary
+            local summaryText = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            summaryText:SetPoint("TOPLEFT", 0, -yOffset)
+            summaryText:SetText(string.format("Scan: %d completed, %d not completed, %d unknown", completedCount, notCompletedCount, unknownCount))
+            summaryText:SetTextColor(0.9, 0.9, 0.9)
+            yOffset = yOffset + 20
+
+            -- Show not completed players
+            if notCompletedCount > 0 then
+                local notCompletedHeader = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                notCompletedHeader:SetPoint("TOPLEFT", 0, -yOffset)
+                notCompletedHeader:SetText("Players Not Completed:")
+                notCompletedHeader:SetTextColor(1, 0.8, 0.8)
+                yOffset = yOffset + 15
+
+                for _, playerName in ipairs(results.notCompleted) do
+                    local playerText = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    playerText:SetPoint("TOPLEFT", 0, -yOffset)
+                    playerText:SetText("• " .. playerName)
+                    playerText:SetTextColor(1, 0.8, 0.8)
+                    yOffset = yOffset + 15
+                end
+            end
+
+            -- Show note about unknown players if any
+            if unknownCount > 0 then
+                if notCompletedCount > 0 then
+                    yOffset = yOffset + 5 -- Add spacing
+                end
+
+                local unknownNote = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                unknownNote:SetPoint("TOPLEFT", 0, -yOffset)
+                unknownNote:SetText(string.format("Note: %d players could not be scanned (offline/dead)", unknownCount))
+                unknownNote:SetTextColor(1, 1, 0.6)
                 yOffset = yOffset + 15
             end
         end
 
-        missingScrollChild:SetHeight(math.max(yOffset, 1))
-        missingScrollFrame:UpdateScrollChildRect()
+        scanResultsScrollChild:SetHeight(math.max(yOffset, 1))
+        scanResultsScrollFrame:UpdateScrollChildRect()
     end
 
     -- Update scan button to refresh display
     scanButton:SetScript("OnClick", function()
         BZ:ScanGroupForActiveAchievement()
-        C_Timer.After(1, UpdateMissingPlayersDisplay) -- Update display after scan
+        C_Timer.After(1, UpdateScanResultsDisplay) -- Update display after scan
     end)
 
     -- Initial display update
-    UpdateMissingPlayersDisplay()
+    UpdateScanResultsDisplay()
 
     -- Add Achievement section
     local addLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -1082,14 +1229,25 @@ function BZ:UpdateDisplayFrame()
 
     if inGroup then
         -- Check if we have scan results
-        local missingCount = #BZ.playersMissingAchievement
-        local totalPlayers = #BZ.playersScanned
+        local results = BZ.scanResults[activeID]
 
-        if totalPlayers > 0 and totalPlayers == groupSize then
-            -- Show scan results: X / Y format
-            displayText = string.format("%d / %d", missingCount, groupSize)
+        if results then
+            local completedCount = #results.completed
+            local notCompletedCount = #results.notCompleted
+            local totalScanned = completedCount + notCompletedCount
+            local unknownCount = groupSize - totalScanned
+
+            if totalScanned > 0 then
+                -- Show scan results: X/U?/Y format (X not completed, U? unknown, Y total)
+                displayText = string.format("%d/%d?/%d", notCompletedCount, unknownCount, groupSize)
+            else
+                -- No scan results yet, show achievement count
+                local count = BZ.db.achievements[activeID] or 0
+                local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
+                displayText = string.format("%s: %d", prefix, count)
+            end
         else
-            -- Show achievement count and enable scan button
+            -- No scan results, show achievement count
             local count = BZ.db.achievements[activeID] or 0
             local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
             displayText = string.format("%s: %d", prefix, count)
