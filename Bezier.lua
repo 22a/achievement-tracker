@@ -269,8 +269,8 @@ function BZ:ProcessInspectReady(guid)
 
     BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r INSPECT_ACHIEVEMENT_READY for %s (GUID: %s)", BZ.playerCurrentlyScanning, tostring(guid)))
 
-    -- Wait a moment for achievement data to be available (like Instance Achievement Tracker)
-    C_Timer.After(0.1, function()
+    -- Wait longer for achievement data to be available (cross-realm needs more time)
+    C_Timer.After(0.5, function()
         -- Signal that the scan was successful by clearing the current player
         BZ.playerCurrentlyScanning = nil
         BZ.scanCounter = BZ.scanCounter + 1
@@ -339,6 +339,15 @@ function BZ:ScanNextPlayer()
     SetAchievementComparisonUnit(unit)
     if CanInspect(unit) then
         NotifyInspect(unit)
+        -- Also try requesting achievements specifically (some addons do this)
+        if unit ~= "player" then
+            C_Timer.After(0.1, function()
+                if GetInspectSpecialization and GetInspectSpecialization(unit) then
+                    -- Player inspection data is available, try requesting achievements
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Requesting achievements for %s", playerName))
+                end
+            end)
+        end
     end
 
     -- Store scan counter for this specific scan
@@ -391,9 +400,26 @@ function BZ:ScanNextPlayer()
                 completed = playerCompleted
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player achievement check: %s", tostring(completed)))
             else
-                -- For other players, use comparison
+                -- For other players, use comparison - try multiple times for cross-realm
                 local id, name, points, otherCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
                 completed = otherCompleted
+
+                -- If first attempt failed, try a few more times with small delays
+                if not id and not completed then
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r First attempt failed for %s, trying again...", playerName))
+                    C_Timer.After(0.1, function()
+                        local id2, name2, points2, completed2 = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
+                        if id2 or completed2 ~= nil then
+                            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Second attempt successful for %s: completed=%s", playerName, tostring(completed2)))
+                            if completed2 ~= nil then
+                                BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, completed2)
+                            end
+                        else
+                            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Second attempt also failed for %s", playerName))
+                        end
+                    end)
+                end
+
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check for %s: id=%s, name=%s, points=%s, completed=%s",
                     playerName, tostring(id), tostring(name), tostring(points), tostring(completed)))
             end
