@@ -993,22 +993,22 @@ function BZ:CreateSettingsPanel()
     scanNote:SetText("Note: Only works reliably for same-realm players in range")
     scanNote:SetTextColor(0.8, 0.8, 0.8)
 
-    -- Players scan results display
+    -- Scanned Members Table
     local scanResultsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     scanResultsLabel:SetPoint("TOPLEFT", scanNote, "BOTTOMLEFT", 0, -10)
-    scanResultsLabel:SetText("Scan results (players not completed):")
+    scanResultsLabel:SetText("Scanned Members:")
     scanResultsLabel:SetTextColor(1, 1, 1)
 
-    -- Scrollable list for scan results
+    -- Scrollable table for scanned members
     local scanResultsScrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scanResultsScrollFrame:SetSize(300, 80)
+    scanResultsScrollFrame:SetSize(400, 120)
     scanResultsScrollFrame:SetPoint("TOPLEFT", scanResultsLabel, "BOTTOMLEFT", 0, -5)
 
     local scanResultsScrollChild = CreateFrame("Frame", nil, scanResultsScrollFrame)
-    scanResultsScrollChild:SetSize(280, 1)
+    scanResultsScrollChild:SetSize(380, 1)
     scanResultsScrollFrame:SetScrollChild(scanResultsScrollChild)
 
-    -- Function to update scan results display
+    -- Function to update scanned members table
     local function UpdateScanResultsDisplay()
         -- Clear existing children
         local children = {scanResultsScrollChild:GetChildren()}
@@ -1028,47 +1028,96 @@ function BZ:CreateSettingsPanel()
             noScanText:SetTextColor(0.7, 0.7, 0.7)
             yOffset = yOffset + 15
         else
-            local completedCount = #results.completed
-            local notCompletedCount = #results.notCompleted
+            -- Create table header
+            local headerFrame = CreateFrame("Frame", nil, scanResultsScrollChild)
+            headerFrame:SetSize(380, 20)
+            headerFrame:SetPoint("TOPLEFT", 0, -yOffset)
+
+            local headerBg = headerFrame:CreateTexture(nil, "BACKGROUND")
+            headerBg:SetAllPoints()
+            headerBg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+
+            local nameHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            nameHeader:SetPoint("LEFT", 5, 0)
+            nameHeader:SetText("Player Name")
+            nameHeader:SetTextColor(1, 1, 1)
+
+            local statusHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            statusHeader:SetPoint("LEFT", 200, 0)
+            statusHeader:SetText("Status")
+            statusHeader:SetTextColor(1, 1, 1)
+
+            yOffset = yOffset + 25
+
+            -- Show completed players
+            for _, playerName in ipairs(results.completed or {}) do
+                local rowFrame = CreateFrame("Frame", nil, scanResultsScrollChild)
+                rowFrame:SetSize(380, 18)
+                rowFrame:SetPoint("TOPLEFT", 0, -yOffset)
+
+                local playerText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                playerText:SetPoint("LEFT", 5, 0)
+                playerText:SetText(playerName)
+                playerText:SetTextColor(0.8, 1, 0.8)
+
+                local statusText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                statusText:SetPoint("LEFT", 200, 0)
+                statusText:SetText("✓ Completed")
+                statusText:SetTextColor(0.8, 1, 0.8)
+
+                yOffset = yOffset + 18
+            end
+
+            -- Show not completed players
+            for _, playerName in ipairs(results.notCompleted or {}) do
+                local rowFrame = CreateFrame("Frame", nil, scanResultsScrollChild)
+                rowFrame:SetSize(380, 18)
+                rowFrame:SetPoint("TOPLEFT", 0, -yOffset)
+
+                local playerText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                playerText:SetPoint("LEFT", 5, 0)
+                playerText:SetText(playerName)
+                playerText:SetTextColor(1, 0.8, 0.8)
+
+                local statusText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                statusText:SetPoint("LEFT", 200, 0)
+                statusText:SetText("✗ Not Completed")
+                statusText:SetTextColor(1, 0.8, 0.8)
+
+                yOffset = yOffset + 18
+            end
+
+            -- Show unknown players (calculate from group size)
+            local completedCount = #(results.completed or {})
+            local notCompletedCount = #(results.notCompleted or {})
             local groupSize = BZ:GetGroupSize()
             local unknownCount = groupSize - completedCount - notCompletedCount
 
-            -- Show summary
+            if unknownCount > 0 then
+                local rowFrame = CreateFrame("Frame", nil, scanResultsScrollChild)
+                rowFrame:SetSize(380, 18)
+                rowFrame:SetPoint("TOPLEFT", 0, -yOffset)
+
+                local playerText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                playerText:SetPoint("LEFT", 5, 0)
+                playerText:SetText(string.format("%d other player(s)", unknownCount))
+                playerText:SetTextColor(1, 1, 0.6)
+
+                local statusText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                statusText:SetPoint("LEFT", 200, 0)
+                statusText:SetText("? Unknown")
+                statusText:SetTextColor(1, 1, 0.6)
+
+                yOffset = yOffset + 18
+            end
+
+            -- Show summary at bottom
+            yOffset = yOffset + 10
             local summaryText = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             summaryText:SetPoint("TOPLEFT", 0, -yOffset)
-            summaryText:SetText(string.format("Scan: %d completed, %d not completed, %d unknown", completedCount, notCompletedCount, unknownCount))
+            summaryText:SetText(string.format("Total: %d completed, %d not completed, %d unknown", completedCount, notCompletedCount, unknownCount))
             summaryText:SetTextColor(0.9, 0.9, 0.9)
-            yOffset = yOffset + 20
-
-            -- Show not completed players
-            if notCompletedCount > 0 then
-                local notCompletedHeader = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                notCompletedHeader:SetPoint("TOPLEFT", 0, -yOffset)
-                notCompletedHeader:SetText("Players Not Completed:")
-                notCompletedHeader:SetTextColor(1, 0.8, 0.8)
-                yOffset = yOffset + 15
-
-                for _, playerName in ipairs(results.notCompleted) do
-                    local playerText = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    playerText:SetPoint("TOPLEFT", 0, -yOffset)
-                    playerText:SetText("• " .. playerName)
-                    playerText:SetTextColor(1, 0.8, 0.8)
-                    yOffset = yOffset + 15
-                end
-            end
-
-            -- Show note about unknown players if any
-            if unknownCount > 0 then
-                if notCompletedCount > 0 then
-                    yOffset = yOffset + 5 -- Add spacing
-                end
-
-                local unknownNote = scanResultsScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                unknownNote:SetPoint("TOPLEFT", 0, -yOffset)
-                unknownNote:SetText(string.format("Note: %d players could not be scanned (cross-realm/out of range)", unknownCount))
-                unknownNote:SetTextColor(1, 1, 0.6)
-                yOffset = yOffset + 15
-            end
+            yOffset = yOffset + 15
         end
 
         scanResultsScrollChild:SetHeight(math.max(yOffset, 1))
