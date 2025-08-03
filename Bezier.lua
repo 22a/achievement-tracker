@@ -441,6 +441,9 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
     end
 
     -- Check scan results cache first (only for definitive results)
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cache lookup for %s: BZ.scanResults[%s] = %s",
+        playerName, tostring(achievementID), tostring(BZ.scanResults[achievementID])))
+
     if BZ.scanResults[achievementID] then
         local results = BZ.scanResults[achievementID]
         local completedCount = #(results.completed or {})
@@ -448,6 +451,14 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
 
         BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Checking cache for %s (cache has %d completed, %d not completed)",
             playerName, completedCount, notCompletedCount))
+
+        -- Debug: show all cached players
+        if completedCount > 0 then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Completed players in cache: %s", table.concat(results.completed, ", ")))
+        end
+        if notCompletedCount > 0 then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Not completed players in cache: %s", table.concat(results.notCompleted, ", ")))
+        end
 
         -- Check if player is in completed list
         for _, completedPlayer in ipairs(results.completed or {}) do
