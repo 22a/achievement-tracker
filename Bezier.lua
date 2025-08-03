@@ -390,8 +390,6 @@ function BZ:ProcessInspectAchievementReady(guid)
         if BZ.currentComparisonUnit == name then
             -- IAT: Make sure the player is still online since achievement scanning may happen some time after scanning players
             if UnitExists(playerCurrentlyScanning) then
-                local name2, realm2 = UnitName(playerCurrentlyScanning)
-
                 -- IAT: Check achievement completion status with proper player self-scanning
                 local completed
                 if BZ.currentComparisonUnit == UnitName("player") then
