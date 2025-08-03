@@ -287,7 +287,7 @@ function BZ:ProcessInspectReady(guid)
         end
 
         SetAchievementComparisonUnit(unit)
-        local id, name, points, completed, month, day, year, description, flags, icon, rewardText, isGuild, wasEarnedByMe = GetAchievementComparisonInfo(achievementID)
+        local id, name, points, completed = GetAchievementComparisonInfo(achievementID)
         ClearAchievementComparisonUnit()
 
         BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s GetAchievementComparisonInfo returned: id=%s, name=%s, completed=%s",
@@ -434,22 +434,30 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
     -- Check scan results cache first (only for definitive results)
     if BZ.scanResults[achievementID] then
         local results = BZ.scanResults[achievementID]
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Checking cache for %s (completed: %d, notCompleted: %d)",
-            playerName, #(results.completed or {}), #(results.notCompleted or {})))
+        local completedCount = #(results.completed or {})
+        local notCompletedCount = #(results.notCompleted or {})
 
-        -- Check if player is in completed or notCompleted lists (definitive results only)
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Checking cache for %s (cache has %d completed, %d not completed)",
+            playerName, completedCount, notCompletedCount))
+
+        -- Check if player is in completed list
         for _, completedPlayer in ipairs(results.completed or {}) do
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparing '%s' with completed player '%s'", playerName, completedPlayer))
             if completedPlayer == playerName then
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Using cached result for %s: completed", playerName))
                 return "completed"
             end
         end
+
+        -- Check if player is in not completed list
         for _, notCompletedPlayer in ipairs(results.notCompleted or {}) do
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparing '%s' with not completed player '%s'", playerName, notCompletedPlayer))
             if notCompletedPlayer == playerName then
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Using cached result for %s: not_completed", playerName))
                 return "not_completed"
             end
         end
+
         -- If not in either list, we need to scan this player
         BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s not found in cache, need to scan", playerName))
     else
@@ -544,6 +552,12 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
 
         BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Scanning %s: unit=%s, unitName=%s, connected=%s, dead=%s, canInspect=%s, crossRealm=%s",
             playerName, unit, tostring(unitName), tostring(isConnected), tostring(isDead), tostring(canInspect), tostring(isCrossRealm)))
+
+        -- Skip offline players - we can't get achievement data from them
+        if not isConnected then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s is offline, cannot scan achievements", playerName))
+            return "unknown"
+        end
 
         -- Try immediate scan first
         SetAchievementComparisonUnit(unit)
