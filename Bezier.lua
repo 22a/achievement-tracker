@@ -568,6 +568,11 @@ function BZ:ResetScanResults()
     BZ.scanFinished = false
     scanInProgress = false
 
+    -- Clear scanning state variables to ensure fresh scan
+    playersToScan = {}
+    playersScanned = {}
+    rescanNeeded = false
+
     BZ.debugLog("|cff00ff00[BZ]|r Scan results reset for active achievement")
 
     -- Update display frame and settings panel
