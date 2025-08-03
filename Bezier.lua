@@ -276,7 +276,7 @@ function BZ:ProcessInspectReady(guid)
     local unit = BZ.currentlyInspecting.unit
     local achievementID = BZ.currentlyInspecting.achievementID
 
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Processing inspection for %s", playerName))
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Processing inspection for %s (GUID: %s)", playerName, tostring(guid)))
 
     -- Try to get achievement data now that inspection is ready
     -- Sometimes we need to wait a moment after INSPECT_ACHIEVEMENT_READY
@@ -286,13 +286,31 @@ function BZ:ProcessInspectReady(guid)
             return
         end
 
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s trying to get achievement data for achievement %s", playerName, tostring(achievementID)))
+
         SetAchievementComparisonUnit(unit)
-        -- GetAchievementComparisonInfo returns: id, name, points, completed, month, day, year, description, flags, icon, rewardText, isGuild, wasEarnedByMe
+
+        -- Try multiple approaches to get achievement data
         local achievementData = {GetAchievementComparisonInfo(achievementID)}
         local id = achievementData[1]
         local name = achievementData[2]
         local points = achievementData[3]
         local completed = achievementData[4]
+
+        -- If that didn't work, try getting the basic achievement info first
+        if not id then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s no data from GetAchievementComparisonInfo, trying GetAchievementInfo", playerName))
+            local basicId, basicName = GetAchievementInfo(achievementID)
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s GetAchievementInfo returned: id=%s, name=%s", playerName, tostring(basicId), tostring(basicName)))
+
+            -- Try comparison again
+            achievementData = {GetAchievementComparisonInfo(achievementID)}
+            id = achievementData[1]
+            name = achievementData[2]
+            points = achievementData[3]
+            completed = achievementData[4]
+        end
+
         ClearAchievementComparisonUnit()
 
         BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s GetAchievementComparisonInfo returned: id=%s, name=%s, points=%s, completed=%s (total values: %d)",
