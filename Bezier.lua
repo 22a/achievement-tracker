@@ -290,6 +290,8 @@ function BZ:StartSequentialScan(achievementID)
         local cached = BZ:CheckPlayerCache(playerName, achievementID)
         if cached == "unknown" then
             table.insert(BZ.playersToScan, playerName)
+        elseif cached == "cross_realm_unknown" then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Skipping %s - already marked as cross-realm unknown", playerName))
         end
     end
 
@@ -381,7 +383,8 @@ function BZ:ScanNextPlayer()
                 BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, completed)
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Got achievement data on timeout for %s: %s", playerName, completed and "completed" or "not_completed"))
             else
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r No achievement data available for %s", playerName))
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r No achievement data available for %s (cross-realm limitation)", playerName))
+                BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
             end
 
             -- Remove from queue and continue
@@ -430,7 +433,10 @@ function BZ:ScanNextPlayer()
                 BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, completed)
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cached result for %s: %s", playerName, completed and "completed" or "not_completed"))
             else
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r No achievement data available for %s after successful scan", playerName))
+                -- Cross-realm achievement data is not available - this is a WoW API limitation
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cross-realm achievement data unavailable for %s (WoW API limitation)", playerName))
+                -- Cache as "unknown" so we don't keep trying to scan this player
+                BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
             end
 
             -- Remove from queue and continue
@@ -446,6 +452,7 @@ function BZ:CachePlayerResult(playerName, achievementID, completed)
         BZ.scanResults[achievementID] = {
             completed = {},
             notCompleted = {},
+            unknown = {},
             timestamp = GetTime(),
             zone = GetZoneText()
         }
@@ -456,6 +463,22 @@ function BZ:CachePlayerResult(playerName, achievementID, completed)
     else
         table.insert(BZ.scanResults[achievementID].notCompleted, playerName)
     end
+end
+
+-- Cache a player as unknown (cross-realm limitation)
+function BZ:CachePlayerAsUnknown(playerName, achievementID)
+    if not BZ.scanResults[achievementID] then
+        BZ.scanResults[achievementID] = {
+            completed = {},
+            notCompleted = {},
+            unknown = {},
+            timestamp = GetTime(),
+            zone = GetZoneText()
+        }
+    end
+
+    table.insert(BZ.scanResults[achievementID].unknown, playerName)
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cached %s as unknown (cross-realm)", playerName))
 end
 
 -- Find unit for a player name
@@ -516,6 +539,13 @@ function BZ:CheckPlayerCache(playerName, achievementID)
         for _, notCompletedPlayer in ipairs(results.notCompleted or {}) do
             if notCompletedPlayer == playerName then
                 return "not_completed"
+            end
+        end
+
+        -- Check if player is in unknown list (cross-realm limitation)
+        for _, unknownPlayer in ipairs(results.unknown or {}) do
+            if unknownPlayer == playerName then
+                return "cross_realm_unknown"
             end
         end
     end
