@@ -573,6 +573,98 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
     end
 end
 
+-- Print comprehensive group status for debugging
+function BZ:PrintGroupStatus(players, achievementID, achievementName)
+    BZ.debugLog("|cff00ff00[BZ Debug]|r ========== GROUP STATUS ==========")
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Achievement: %s (ID: %s)", achievementName, tostring(achievementID)))
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Group Size: %d", #players))
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Group Type: %s", IsInRaid() and "RAID" or (IsInGroup() and "PARTY" or "SOLO")))
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Zone: %s", GetZoneText()))
+
+    -- Show each player and their unit mapping
+    for i, playerName in ipairs(players) do
+        local unit = nil
+        local unitStatus = "NOT FOUND"
+
+        -- Try to find the unit for this player
+        if IsInRaid() then
+            for j = 1, GetNumGroupMembers() do
+                local checkUnit = "raid" .. j
+                if UnitExists(checkUnit) then
+                    local name, realm = UnitFullName(checkUnit)
+                    if name then
+                        local fullName = realm and (name .. "-" .. realm) or name
+                        if fullName == playerName then
+                            unit = checkUnit
+                            break
+                        end
+                    end
+                end
+            end
+        elseif IsInGroup() then
+            -- Check party members
+            for j = 1, GetNumSubgroupMembers() do
+                local checkUnit = "party" .. j
+                if UnitExists(checkUnit) then
+                    local name, realm = UnitFullName(checkUnit)
+                    if name then
+                        local fullName = realm and (name .. "-" .. realm) or name
+                        if fullName == playerName then
+                            unit = checkUnit
+                            break
+                        end
+                    end
+                end
+            end
+            -- Check player
+            local name, realm = UnitFullName("player")
+            if name then
+                local fullName = realm and (name .. "-" .. realm) or name
+                if fullName == playerName then
+                    unit = "player"
+                end
+            end
+        else
+            -- Solo
+            local name, realm = UnitFullName("player")
+            if name then
+                local fullName = realm and (name .. "-" .. realm) or name
+                if fullName == playerName then
+                    unit = "player"
+                end
+            end
+        end
+
+        if unit then
+            local connected = UnitIsConnected(unit)
+            local dead = UnitIsDeadOrGhost(unit)
+            local canInspect = CanInspect(unit)
+            local unitName = UnitName(unit)
+            unitStatus = string.format("FOUND (%s) - connected:%s, dead:%s, canInspect:%s, unitName:%s",
+                unit, tostring(connected), tostring(dead), tostring(canInspect), tostring(unitName))
+        end
+
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player %d: %s -> %s", i, playerName, unitStatus))
+    end
+
+    -- Show cache status
+    if BZ.scanResults[achievementID] then
+        local cache = BZ.scanResults[achievementID]
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cache: %d completed, %d not completed",
+            #(cache.completed or {}), #(cache.notCompleted or {})))
+        if #(cache.completed or {}) > 0 then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Completed: %s", table.concat(cache.completed, ", ")))
+        end
+        if #(cache.notCompleted or {}) > 0 then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Not Completed: %s", table.concat(cache.notCompleted, ", ")))
+        end
+    else
+        BZ.debugLog("|cff00ff00[BZ Debug]|r Cache: No cache for this achievement")
+    end
+
+    BZ.debugLog("|cff00ff00[BZ Debug]|r ===================================")
+end
+
 -- Scan group members for active achievement
 function BZ:ScanGroupForActiveAchievement(scanType)
     local activeID = BZ.db.settings.activeAchievementID
@@ -594,6 +686,9 @@ function BZ:ScanGroupForActiveAchievement(scanType)
 
     local players = BZ:GetPlayersInGroup()
     local achievementName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
+
+    -- Print comprehensive group status for debugging
+    BZ:PrintGroupStatus(players, activeID, achievementName)
 
     -- Initialize scan results for this achievement
     if not BZ.scanResults[activeID] then

@@ -2,7 +2,7 @@
 ## Title: Bezier
 ## Notes: Tracks achievements earned for the first time by party/raid members
 ## Author: 22a
-## Version: 0.2.9
+## Version: 0.2.10
 ## SavedVariables: BezierDB
 ## DefaultState: enabled
 ## X-Category: Achievements
