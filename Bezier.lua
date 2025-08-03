@@ -1273,8 +1273,10 @@ function BZ:UpdateDisplayFrame()
             local unknownCount = groupSize - totalScanned
 
             if totalScanned > 0 then
-                -- Show scan results: X/U?/Y format (X not completed, U? unknown, Y total)
-                displayText = string.format("%d/%d?/%d", notCompletedCount, unknownCount, groupSize)
+                -- Show scan results with prefix: PREFIX: COUNT (X/U?/Y format)
+                local count = BZ.db.achievements[activeID] or 0
+                local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
+                displayText = string.format("%s: %d (%d/%d?/%d)", prefix, count, notCompletedCount, unknownCount, groupSize)
             else
                 -- No scan results yet, show achievement count
                 local count = BZ.db.achievements[activeID] or 0
