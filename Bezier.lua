@@ -395,6 +395,7 @@ function BZ:GetPlayersInGroup()
                 local name = UnitName(unit)
                 if name and name ~= "Unknown" then
                     -- Keep full name with realm information for cross-realm players
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r GetPlayersInGroup: %s -> %s", unit, name))
                     table.insert(players, name)
                 end
             end
@@ -516,8 +517,8 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
         local isDead = UnitIsDeadOrGhost(unit)
         local canInspect = CanInspect(unit)
 
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Scanning %s: unit=%s, connected=%s, dead=%s, canInspect=%s, crossRealm=%s",
-            playerName, unit, tostring(isConnected), tostring(isDead), tostring(canInspect), tostring(isCrossRealm)))
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Scanning %s: unit=%s, unitName=%s, connected=%s, dead=%s, canInspect=%s, crossRealm=%s",
+            playerName, unit, tostring(unitName), tostring(isConnected), tostring(isDead), tostring(canInspect), tostring(isCrossRealm)))
 
         -- Try immediate scan first
         SetAchievementComparisonUnit(unit)
