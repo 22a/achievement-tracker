@@ -543,6 +543,28 @@ function BZ:ScanGroupForActiveAchievement()
     BZ:UpdateDisplayFrame()
 end
 
+-- Reset scan results for active achievement
+function BZ:ResetScanResults()
+    local activeID = BZ.db.settings.activeAchievementID
+    if not activeID then
+        BZ.debugLog("|cffff0000[BZ]|r No active achievement set")
+        return
+    end
+
+    -- Clear scan results for active achievement
+    BZ.scanResults[activeID] = nil
+    BZ.scanFinished = false
+    scanInProgress = false
+
+    BZ.debugLog("|cff00ff00[BZ]|r Scan results reset for active achievement")
+
+    -- Update display frame and settings panel
+    BZ:UpdateDisplayFrame()
+    if UpdateScanResultsDisplay then
+        UpdateScanResultsDisplay()
+    end
+end
+
 
 
 -- Cache a player's achievement result
@@ -1067,6 +1089,15 @@ function BZ:CreateSettingsPanel()
         BZ:ScanGroupForActiveAchievement()
     end)
 
+    -- Reset Scan button
+    local resetScanButton = CreateFrame("Button", nil, scanTab, "UIPanelButtonTemplate")
+    resetScanButton:SetSize(120, 22)
+    resetScanButton:SetPoint("LEFT", scanButton, "RIGHT", 10, 0)
+    resetScanButton:SetText("Reset Scan")
+    resetScanButton:SetScript("OnClick", function()
+        BZ:ResetScanResults()
+    end)
+
     -- Scanning limitation note
     local scanNote = scanTab:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     scanNote:SetPoint("TOPLEFT", scanButton, "BOTTOMLEFT", 0, -5)
@@ -1452,22 +1483,7 @@ function BZ:CreateDisplayFrame()
     text:SetTextColor(1, 1, 1, 1)
     BZ.displayFrame.text = text
 
-    -- Create scan button (initially hidden)
-    local scanButton = CreateFrame("Button", nil, BZ.displayFrame, "UIPanelButtonTemplate")
-    scanButton:SetSize(50, 20)
-    scanButton:SetPoint("RIGHT", -10, 0)
-    scanButton:SetText("Scan")
-    scanButton:Hide()
-    BZ.displayFrame.scanButton = scanButton
 
-    -- Scan button click handler
-    scanButton:SetScript("OnClick", function()
-        BZ:ScanGroupForActiveAchievement()
-        -- Update display after a short delay to show results
-        C_Timer.After(0.5, function()
-            BZ:UpdateDisplayFrame()
-        end)
-    end)
 
     -- Mouse handlers
     BZ.displayFrame:SetScript("OnMouseDown", function(self, button)
@@ -1511,7 +1527,6 @@ function BZ:UpdateDisplayFrame()
     local activeID = BZ.db.settings.activeAchievementID
     if not activeID then
         BZ.displayFrame.text:SetText("No active achievement set")
-        BZ.displayFrame.scanButton:Hide()
         -- Auto-resize frame for text only
         local textWidth = BZ.displayFrame.text:GetStringWidth()
         local textHeight = BZ.displayFrame.text:GetStringHeight()
@@ -1530,7 +1545,6 @@ function BZ:UpdateDisplayFrame()
     BZ.displayFrame.text:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
 
     local displayText
-    local showScanButton = false
 
     if inGroup then
         -- Check if we have scan results
@@ -1559,30 +1573,20 @@ function BZ:UpdateDisplayFrame()
             local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
             displayText = string.format("%s: %d", prefix, count)
         end
-        showScanButton = true
     else
         -- Solo player - show normal count
         local count = BZ.db.achievements[activeID] or 0
         local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
         displayText = string.format("%s: %d", prefix, count)
-        showScanButton = false
     end
 
     -- Set text
     BZ.displayFrame.text:SetText(displayText)
 
-    -- Show/hide scan button
-    if showScanButton then
-        BZ.displayFrame.scanButton:Show()
-    else
-        BZ.displayFrame.scanButton:Hide()
-    end
-
     -- Auto-resize frame
     local textWidth = BZ.displayFrame.text:GetStringWidth()
     local textHeight = BZ.displayFrame.text:GetStringHeight()
-    local buttonWidth = showScanButton and 60 or 0 -- 50 for button + 10 padding
-    local frameWidth = math.max(textWidth + buttonWidth + 20, 80)
+    local frameWidth = math.max(textWidth + 20, 80)
     local frameHeight = math.max(textHeight + 12, 20)
     BZ.displayFrame:SetSize(frameWidth, frameHeight)
 end
