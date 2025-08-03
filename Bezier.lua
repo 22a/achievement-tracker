@@ -23,6 +23,7 @@ BZ.countingAllowlist = {} -- Players we know for certain don't have achievements
 BZ.scanResults = {} -- Scan results and cache: [achievementID] = {completed={}, notCompleted={}, timestamp=time, zone=zone}
 BZ.currentZone = nil -- Track current zone to detect instance changes
 BZ.periodicScanTimer = nil -- Timer for periodic scanning
+BZ.scanStartTime = nil -- Track scan timing
 
 -- Default database structure
 local defaultDB = {
@@ -428,7 +429,7 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
 end
 
 -- Scan group members for active achievement
-function BZ:ScanGroupForActiveAchievement()
+function BZ:ScanGroupForActiveAchievement(scanType)
     local activeID = BZ.db.settings.activeAchievementID
     if not activeID then
         BZ.debugLog("|cffff0000[BZ]|r No active achievement set for scanning")
@@ -440,6 +441,8 @@ function BZ:ScanGroupForActiveAchievement()
         return
     end
 
+    -- Start timing the scan
+    BZ.scanStartTime = GetTime()
     BZ.groupScanInProgress = true
     BZ.currentScanAchievementID = activeID
     BZ.scanCounter = BZ.scanCounter + 1
@@ -478,10 +481,11 @@ function BZ:ScanGroupForActiveAchievement()
         end
     end
 
+    local scanTypeText = scanType or "manual"
     if cachedResults > 0 then
-        BZ.debugLog(string.format("|cff00ff00[BZ]|r Using %d cached results, need to scan %d unknown players for achievement: %s", cachedResults, #playersToScan, achievementName))
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r %s scan: Using %d cached results, need to scan %d unknown players for achievement: %s", scanTypeText, cachedResults, #playersToScan, achievementName))
     else
-        BZ.debugLog(string.format("|cff00ff00[BZ]|r Scanning %d players for achievement: %s", #players, achievementName))
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r %s scan: Scanning %d players for achievement: %s", scanTypeText, #players, achievementName))
     end
 
     -- Scanning is now complete since PlayerHasAchievement populated the results
@@ -492,11 +496,15 @@ end
 function BZ:CompleteScan()
     BZ.groupScanInProgress = false
 
+    -- Calculate scan duration
+    local scanDuration = BZ.scanStartTime and (GetTime() - BZ.scanStartTime) or 0
+    local durationText = string.format("%.2fs", scanDuration)
+
     local achievementName = select(2, GetAchievementInfo(BZ.currentScanAchievementID)) or "Unknown Achievement"
     local results = BZ.scanResults[BZ.currentScanAchievementID]
 
     if not results then
-        BZ.debugLog("|cff00ff00[BZ]|r Scan completed but no results found")
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan completed but no results found (took %s)", durationText))
         return
     end
 
@@ -506,7 +514,7 @@ function BZ:CompleteScan()
     local groupSize = BZ:GetGroupSize()
     local unknownCount = groupSize - totalScanned
 
-    BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan complete: %d completed, %d not completed, %d unknown, %d total for %s", completedCount, notCompletedCount, unknownCount, groupSize, achievementName))
+    BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan complete: %d completed, %d not completed, %d unknown, %d total for %s (took %s)", completedCount, notCompletedCount, unknownCount, groupSize, achievementName, durationText))
 
     if notCompletedCount > 0 then
         BZ.debugLog("|cff00ff00[BZ]|r Players not completed the achievement:")
@@ -640,8 +648,8 @@ function BZ:PeriodicScanCheck()
         return
     end
 
-    BZ.debugLog("|cff00ff00[BZ Debug]|r Performing periodic scan")
-    BZ:ScanGroupForActiveAchievement()
+    BZ.debugLog("|cff00ff00[BZ Debug]|r Performing periodic scan...")
+    BZ:ScanGroupForActiveAchievement("periodic")
 end
 
 -- Clear scan results (call this when leaving instance)
