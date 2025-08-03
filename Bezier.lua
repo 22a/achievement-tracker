@@ -279,32 +279,43 @@ function BZ:ProcessInspectReady(guid)
     BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Processing inspection for %s", playerName))
 
     -- Try to get achievement data now that inspection is ready
-    SetAchievementComparisonUnit(unit)
-    local _, _, _, completed = GetAchievementComparisonInfo(achievementID)
-    ClearAchievementComparisonUnit()
-
-    if completed ~= nil then
-        local result = completed and "completed" or "not_completed"
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status (after inspect ready): %s", playerName, result))
-
-        -- Cache the result
-        if not BZ.scanResults[achievementID] then
-            BZ.scanResults[achievementID] = {
-                completed = {},
-                notCompleted = {},
-                timestamp = GetTime(),
-                zone = GetZoneText()
-            }
+    -- Sometimes we need to wait a moment after INSPECT_ACHIEVEMENT_READY
+    C_Timer.After(0.1, function()
+        if not UnitExists(unit) then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s unit no longer exists, skipping", playerName))
+            return
         end
 
-        if result == "completed" then
-            table.insert(BZ.scanResults[achievementID].completed, playerName)
+        SetAchievementComparisonUnit(unit)
+        local id, name, points, completed, month, day, year, description, flags, icon, rewardText, isGuild, wasEarnedByMe = GetAchievementComparisonInfo(achievementID)
+        ClearAchievementComparisonUnit()
+
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s GetAchievementComparisonInfo returned: id=%s, name=%s, completed=%s",
+            playerName, tostring(id), tostring(name), tostring(completed)))
+
+        if completed ~= nil then
+            local result = completed and "completed" or "not_completed"
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status (after inspect ready): %s", playerName, result))
+
+            -- Cache the result
+            if not BZ.scanResults[achievementID] then
+                BZ.scanResults[achievementID] = {
+                    completed = {},
+                    notCompleted = {},
+                    timestamp = GetTime(),
+                    zone = GetZoneText()
+                }
+            end
+
+            if result == "completed" then
+                table.insert(BZ.scanResults[achievementID].completed, playerName)
+            else
+                table.insert(BZ.scanResults[achievementID].notCompleted, playerName)
+            end
         else
-            table.insert(BZ.scanResults[achievementID].notCompleted, playerName)
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status still unknown after inspect ready", playerName))
         end
-    else
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status still unknown after inspect ready", playerName))
-    end
+    end)
 
     -- Clear current inspection
     BZ.currentlyInspecting = nil
