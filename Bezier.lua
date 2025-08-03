@@ -293,7 +293,7 @@ function BZ:GetPlayersInGroup()
 
     -- Only announce scanning once
     if scanAnnounced == false then
-        print("|cff00ff00[Bezier]|r Starting achievement scan for " .. (select(2, GetAchievementInfo(BZ.db.settings.activeAchievementID)) or "Unknown Achievement"))
+        BZ.debugLog("|cff00ff00[Bezier]|r Starting achievement scan for " .. (select(2, GetAchievementInfo(BZ.db.settings.activeAchievementID)) or "Unknown Achievement"))
         scanAnnounced = true
     end
 
@@ -442,9 +442,9 @@ function BZ:ProcessInspectAchievementReady(guid)
                 BZ:CachePlayerResult(name, BZ.db.settings.activeAchievementID, completed or false)
 
                 if completed then
-                    print(string.format("|cff00ff00[BZ CONFIRMED]|r %s has COMPLETED the achievement", name))
+                    BZ.debugLog(string.format("|cff00ff00[BZ CONFIRMED]|r %s has COMPLETED the achievement", name))
                 else
-                    print(string.format("|cffffff00[BZ CONFIRMED]|r %s has NOT COMPLETED the achievement", name))
+                    BZ.debugLog(string.format("|cffffff00[BZ CONFIRMED]|r %s has NOT COMPLETED the achievement", name))
                 end
 
                 -- Move player from toScan to scanned
@@ -461,7 +461,7 @@ function BZ:ProcessInspectAchievementReady(guid)
                     BZ:GetInstanceAchievements()
                 elseif #playersToScan == 0 and rescanNeeded == false and #playersScanned == BZ:GetGroupSize() then
                     -- Perfect completion - all players scanned successfully
-                    print(string.format("|cff00ff00[Bezier]|r Achievement scan finished (%d/%d)", #playersScanned, BZ:GetGroupSize()))
+                    BZ.debugLog(string.format("|cff00ff00[Bezier]|r Achievement scan finished (%d/%d)", #playersScanned, BZ:GetGroupSize()))
                     scanInProgress = false
                     BZ.scanFinished = true
 
