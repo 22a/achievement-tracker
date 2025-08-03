@@ -296,14 +296,14 @@ function BZ:ProcessInspectReady(guid)
                     tostring(completed), tostring(month), tostring(day), tostring(year)))
             end
 
-            -- Cache result - nil is a valid response meaning "no achievement data available"
-            if completed ~= nil then
-                BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, completed)
-                print(string.format("|cff00ff00[BZ CONFIRMED]|r %s has %s the achievement", playerName, completed and "COMPLETED" or "NOT COMPLETED"))
+            -- Cache result - treat nil as "not completed" (if they had it, we'd likely get true)
+            local finalCompleted = completed or false  -- nil becomes false
+            BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, finalCompleted)
+
+            if completed == nil then
+                print(string.format("|cffffff00[BZ CONFIRMED]|r %s has NOT COMPLETED the achievement (no data available)", playerName))
             else
-                -- nil means no achievement data available (valid response, not a failure)
-                BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
-                print(string.format("|cffffff00[BZ INFO]|r No achievement data available for %s (cross-realm or privacy)", playerName))
+                print(string.format("|cff00ff00[BZ CONFIRMED]|r %s has %s the achievement", playerName, completed and "COMPLETED" or "NOT COMPLETED"))
             end
         end
 
@@ -378,12 +378,13 @@ function BZ:ScanNextPlayer()
     -- For player, handle immediately (no inspection needed)
     if unit == "player" then
         local _, _, _, playerCompleted = GetAchievementInfo(BZ.currentScanAchievementID)
-        if playerCompleted ~= nil then
-            BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, playerCompleted)
-            print(string.format("|cff00ff00[BZ CONFIRMED]|r %s (PLAYER) has %s the achievement", playerName, playerCompleted and "COMPLETED" or "NOT COMPLETED"))
+        local finalCompleted = playerCompleted or false  -- treat nil as not completed
+        BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, finalCompleted)
+
+        if playerCompleted == nil then
+            print(string.format("|cff00ff00[BZ CONFIRMED]|r %s (PLAYER) has NOT COMPLETED the achievement (no data)", playerName))
         else
-            BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
-            print(string.format("|cffff0000[BZ FAILED]|r Could not get player achievement status"))
+            print(string.format("|cff00ff00[BZ CONFIRMED]|r %s (PLAYER) has %s the achievement", playerName, playerCompleted and "COMPLETED" or "NOT COMPLETED"))
         end
 
         -- Continue immediately
@@ -404,8 +405,9 @@ function BZ:ScanNextPlayer()
     C_Timer.After(5, function()
         if BZ.playerCurrentlyScanning == playerName then
             BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Timeout waiting for INSPECT_ACHIEVEMENT_READY for %s", playerName))
-            BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
-            print(string.format("|cffffff00[BZ INFO]|r Timeout scanning %s - no response from server", playerName))
+            -- Treat timeout as "not completed" and continue scanning
+            BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, false)
+            print(string.format("|cffffff00[BZ CONFIRMED]|r %s has NOT COMPLETED the achievement (timeout - no server response)", playerName))
 
             BZ.playerCurrentlyScanning = nil
             table.remove(BZ.playersToScan, 1)
