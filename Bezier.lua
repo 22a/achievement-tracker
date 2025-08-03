@@ -19,7 +19,7 @@ frame:RegisterEvent("PLAYER_LEAVING_WORLD")
 BZ.groupScanInProgress = false
 BZ.currentScanAchievementID = nil
 BZ.scanCounter = 0
-BZ.countingAllowlist = {} -- Players we know for certain don't have achievements: [achievementID] = {"player1", "player2"}
+
 BZ.scanResults = {} -- Scan results and cache: [achievementID] = {completed={}, notCompleted={}, timestamp=time, zone=zone}
 BZ.currentZone = nil -- Track current zone to detect instance changes
 BZ.periodicScanTimer = nil -- Timer for periodic scanning
@@ -118,11 +118,11 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
         return
     end
 
-    -- Check if this player is in our counting allowlist (players we know for certain didn't have the achievement)
+    -- Check if this player was in our notCompleted list (players we know for certain didn't have the achievement)
     local shouldCount = false
-    if BZ.countingAllowlist[achievementID] then
-        for _, allowedPlayer in ipairs(BZ.countingAllowlist[achievementID]) do
-            if allowedPlayer == playerName then
+    if BZ.scanResults[achievementID] and BZ.scanResults[achievementID].notCompleted then
+        for _, notCompletedPlayer in ipairs(BZ.scanResults[achievementID].notCompleted) do
+            if notCompletedPlayer == playerName then
                 shouldCount = true
                 break
             end
@@ -130,7 +130,7 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
     end
 
     if not shouldCount then
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Not counting achievement for %s: not in allowlist (either already had it or status was unknown)", playerName))
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Not counting achievement for %s: not in notCompleted list (either already had it or status was unknown)", playerName))
         return
     end
 
@@ -562,45 +562,7 @@ function BZ:PrintScanResults()
     end
 end
 
--- Populate counting allowlist based on current scan results
-function BZ:PopulateCountingAllowlist(achievementID)
-    if not achievementID then
-        achievementID = BZ.db.settings.activeAchievementID
-    end
 
-    if not achievementID then
-        BZ.debugLog("|cff00ff00[BZ Debug]|r No achievement ID provided for counting allowlist")
-        return
-    end
-
-    -- Initialize counting allowlist for this achievement
-    BZ.countingAllowlist[achievementID] = {}
-
-    local results = BZ.scanResults[achievementID]
-    if not results then
-        BZ.debugLog("|cff00ff00[BZ Debug]|r No scan results available for counting allowlist")
-        return
-    end
-
-    local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
-
-    -- Only add players we confirmed have not completed the achievement
-    for _, playerName in ipairs(results.notCompleted) do
-        table.insert(BZ.countingAllowlist[achievementID], playerName)
-    end
-
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Counting allowlist for %s: %d players eligible for counting", achievementName, #BZ.countingAllowlist[achievementID]))
-
-    for _, playerName in ipairs(BZ.countingAllowlist[achievementID]) do
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r  - %s", playerName))
-    end
-end
-
--- Clear counting allowlist (call this when leaving instance or resetting)
-function BZ:ClearCountingAllowlist()
-    BZ.countingAllowlist = {}
-    BZ.debugLog("|cff00ff00[BZ Debug]|r Counting allowlist cleared")
-end
 
 -- Start periodic scanning
 function BZ:StartPeriodicScanning()
