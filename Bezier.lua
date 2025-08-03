@@ -315,11 +315,26 @@ end
 
 -- Add player to inspection queue
 function BZ:QueueInspection(playerName, unit, achievementID)
+    -- Check if player is already in queue or currently being inspected
+    if BZ.currentlyInspecting and BZ.currentlyInspecting.playerName == playerName then
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s already being inspected, skipping queue", playerName))
+        return
+    end
+
+    for _, queuedInspection in ipairs(BZ.inspectQueue) do
+        if queuedInspection.playerName == playerName then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s already in inspection queue, skipping", playerName))
+            return
+        end
+    end
+
     table.insert(BZ.inspectQueue, {
         playerName = playerName,
         unit = unit,
         achievementID = achievementID
     })
+
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Added %s to inspection queue (queue size: %d)", playerName, #BZ.inspectQueue))
 
     -- Start processing if not already inspecting
     if not BZ.currentlyInspecting then
@@ -342,8 +357,8 @@ function BZ:ProcessInspectQueue()
     if CanInspect(inspection.unit) then
         NotifyInspect(inspection.unit)
 
-        -- Set timeout (2 seconds like Instance Achievement Tracker)
-        BZ.inspectTimeout = C_Timer.NewTimer(2, function()
+        -- Set timeout (5 seconds to allow more time for cross-realm players)
+        BZ.inspectTimeout = C_Timer.NewTimer(5, function()
             BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Inspection timeout for %s", inspection.playerName))
             BZ.currentlyInspecting = nil
             BZ.inspectTimeout = nil
