@@ -1564,8 +1564,9 @@ function BZ:UpdateDisplayFrame()
         BZ.displayFrame.text2:SetText("")
         -- Auto-resize frame for text only
         local textWidth = BZ.displayFrame.text1:GetStringWidth()
+        local textHeight = BZ.displayFrame.text1:GetStringHeight()
         local frameWidth = math.max(textWidth + 20, 80)
-        local frameHeight = 50
+        local frameHeight = math.max(textHeight + 16, 30) -- 16px padding
         BZ.displayFrame:SetSize(frameWidth, frameHeight)
         return
     end
@@ -1627,11 +1628,17 @@ function BZ:UpdateDisplayFrame()
         BZ.displayFrame.spinnerAnim:Stop()
     end
 
-    -- Auto-resize frame based on widest line
+    -- Auto-resize frame based on content
     local text1Width = BZ.displayFrame.text1:GetStringWidth()
     local text2Width = BZ.displayFrame.text2:GetStringWidth()
     local maxWidth = math.max(text1Width, text2Width)
     local frameWidth = math.max(maxWidth + 20, 80)
-    local frameHeight = 50
+
+    -- Calculate height based on font size and line spacing
+    local text1Height = BZ.displayFrame.text1:GetStringHeight()
+    local text2Height = line2Text ~= "" and BZ.displayFrame.text2:GetStringHeight() or 0
+    local lineSpacing = line2Text ~= "" and 3 or 0 -- 3px spacing between lines when second line exists
+    local frameHeight = math.max(text1Height + text2Height + lineSpacing + 16, 30) -- 16px total padding (8px top + 8px bottom)
+
     BZ.displayFrame:SetSize(frameWidth, frameHeight)
 end
