@@ -851,18 +851,76 @@ function BZ:CreateSettingsPanel()
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("Bezier Settings")
 
+    -- Create tab system
+    local tabButtons = {}
+    local tabFrames = {}
+    local currentTab = 1
+
+    -- Tab button creation function
+    local function CreateTabButton(index, text, parent)
+        local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+        button:SetSize(120, 25)
+        button:SetPoint("TOPLEFT", title, "BOTTOMLEFT", (index - 1) * 125, -10)
+        button:SetText(text)
+
+        button:SetScript("OnClick", function()
+            -- Hide all tab frames
+            for i = 1, #tabFrames do
+                tabFrames[i]:Hide()
+            end
+            -- Show selected tab frame
+            tabFrames[index]:Show()
+
+            -- Update button states
+            for i = 1, #tabButtons do
+                if i == index then
+                    tabButtons[i]:SetButtonState("PUSHED", true)
+                    tabButtons[i]:Disable()
+                else
+                    tabButtons[i]:SetButtonState("NORMAL")
+                    tabButtons[i]:Enable()
+                end
+            end
+            currentTab = index
+        end)
+
+        return button
+    end
+
+    -- Create tab buttons
+    tabButtons[1] = CreateTabButton(1, "General", panel)
+    tabButtons[2] = CreateTabButton(2, "Scan Results", panel)
+    tabButtons[3] = CreateTabButton(3, "Achievements", panel)
+
+    -- Create tab content frames
+    for i = 1, 3 do
+        local tabFrame = CreateFrame("Frame", nil, panel)
+        tabFrame:SetSize(600, 500)
+        tabFrame:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -45)
+        tabFrame:Hide()
+        tabFrames[i] = tabFrame
+    end
+
+    -- Show first tab by default
+    tabFrames[1]:Show()
+    tabButtons[1]:SetButtonState("PUSHED", true)
+    tabButtons[1]:Disable()
+
+    -- TAB 1: GENERAL SETTINGS
+    local generalTab = tabFrames[1]
+
     -- Display Frame Settings Section
-    local displayLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    displayLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -30)
+    local displayLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    displayLabel:SetPoint("TOPLEFT", 10, -10)
     displayLabel:SetText("Display Frame Settings:")
 
     -- Enable Display Frame setting
-    local enableCheckbox = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    local enableCheckbox = CreateFrame("CheckButton", nil, generalTab, "UICheckButtonTemplate")
     enableCheckbox:SetSize(20, 20)
     enableCheckbox:SetPoint("TOPLEFT", displayLabel, "BOTTOMLEFT", 10, -10)
     enableCheckbox:SetChecked(BZ.db.settings.displayFrame.enabled)
 
-    local enableLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local enableLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     enableLabel:SetPoint("LEFT", enableCheckbox, "RIGHT", 5, 0)
     enableLabel:SetText("Show Display Frame")
 
@@ -884,22 +942,22 @@ function BZ:CreateSettingsPanel()
     end)
 
     -- Display Prefix setting
-    local prefixLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local prefixLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     prefixLabel:SetPoint("TOPLEFT", enableCheckbox, "BOTTOMLEFT", 0, -20)
     prefixLabel:SetText("Display Text Prefix:")
 
-    local prefixHelp = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local prefixHelp = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     prefixHelp:SetPoint("TOPLEFT", prefixLabel, "BOTTOMLEFT", 0, -2)
     prefixHelp:SetText("(This text will be shown before the count, e.g., 'Your Text: 5')")
     prefixHelp:SetTextColor(0.7, 0.7, 0.7)
 
-    local prefixInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    local prefixInput = CreateFrame("EditBox", nil, generalTab, "InputBoxTemplate")
     prefixInput:SetSize(150, 20)
     prefixInput:SetPoint("TOPLEFT", prefixHelp, "BOTTOMLEFT", 0, -5)
     prefixInput:SetAutoFocus(false)
     prefixInput:SetText(BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX)
 
-    local prefixSaveButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local prefixSaveButton = CreateFrame("Button", nil, generalTab, "UIPanelButtonTemplate")
     prefixSaveButton:SetSize(50, 22)
     prefixSaveButton:SetPoint("LEFT", prefixInput, "RIGHT", 5, 0)
     prefixSaveButton:SetText("Save")
@@ -914,7 +972,7 @@ function BZ:CreateSettingsPanel()
         end
     end)
 
-    local prefixResetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local prefixResetButton = CreateFrame("Button", nil, generalTab, "UIPanelButtonTemplate")
     prefixResetButton:SetSize(50, 22)
     prefixResetButton:SetPoint("LEFT", prefixSaveButton, "RIGHT", 5, 0)
     prefixResetButton:SetText("Reset")
@@ -926,11 +984,11 @@ function BZ:CreateSettingsPanel()
     end)
 
     -- Font Size setting
-    local fontLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local fontLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     fontLabel:SetPoint("TOPLEFT", prefixInput, "BOTTOMLEFT", 0, -40)
     fontLabel:SetText("Font Size:")
 
-    local fontSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    local fontSlider = CreateFrame("Slider", nil, generalTab, "OptionsSliderTemplate")
     fontSlider:SetSize(150, 20)
     fontSlider:SetPoint("LEFT", fontLabel, "RIGHT", 10, 0)
     fontSlider:SetMinMaxValues(8, 24)
@@ -954,17 +1012,17 @@ function BZ:CreateSettingsPanel()
     end)
 
     -- General Settings Section
-    local generalLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local generalLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     generalLabel:SetPoint("TOPLEFT", fontLabel, "BOTTOMLEFT", -10, -40)
     generalLabel:SetText("General Settings:")
 
     -- Debug Mode setting
-    local debugCheckbox = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    local debugCheckbox = CreateFrame("CheckButton", nil, generalTab, "UICheckButtonTemplate")
     debugCheckbox:SetSize(20, 20)
     debugCheckbox:SetPoint("TOPLEFT", generalLabel, "BOTTOMLEFT", 10, -10)
     debugCheckbox:SetChecked(BZ.db.settings.enableDebugLogging)
 
-    local debugLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local debugLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     debugLabel:SetPoint("LEFT", debugCheckbox, "RIGHT", 5, 0)
     debugLabel:SetText("Enable Debug Logging")
 
@@ -973,13 +1031,16 @@ function BZ:CreateSettingsPanel()
         BZ.debugLog(string.format("|cff00ff00[BZ]|r Debug logging: %s", BZ.db.settings.enableDebugLogging and "ON" or "OFF"))
     end)
 
+    -- TAB 2: SCAN RESULTS
+    local scanTab = tabFrames[2]
+
     -- Group Scanning Section
-    local groupLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    groupLabel:SetPoint("TOPLEFT", debugCheckbox, "BOTTOMLEFT", -10, -30)
+    local groupLabel = scanTab:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    groupLabel:SetPoint("TOPLEFT", 10, -10)
     groupLabel:SetText("Group Achievement Scanning:")
 
     -- Scan Group button
-    local scanButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local scanButton = CreateFrame("Button", nil, scanTab, "UIPanelButtonTemplate")
     scanButton:SetSize(120, 22)
     scanButton:SetPoint("TOPLEFT", groupLabel, "BOTTOMLEFT", 0, -5)
     scanButton:SetText("Scan Group")
@@ -988,19 +1049,19 @@ function BZ:CreateSettingsPanel()
     end)
 
     -- Scanning limitation note
-    local scanNote = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local scanNote = scanTab:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     scanNote:SetPoint("TOPLEFT", scanButton, "BOTTOMLEFT", 0, -5)
     scanNote:SetText("Note: Only works reliably for same-realm players in range")
     scanNote:SetTextColor(0.8, 0.8, 0.8)
 
     -- Scanned Members Table
-    local scanResultsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local scanResultsLabel = scanTab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     scanResultsLabel:SetPoint("TOPLEFT", scanNote, "BOTTOMLEFT", 0, -10)
     scanResultsLabel:SetText("Scanned Members:")
     scanResultsLabel:SetTextColor(1, 1, 1)
 
     -- Scrollable table for scanned members
-    local scanResultsScrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    local scanResultsScrollFrame = CreateFrame("ScrollFrame", nil, scanTab, "UIPanelScrollFrameTemplate")
     scanResultsScrollFrame:SetSize(400, 120)
     scanResultsScrollFrame:SetPoint("TOPLEFT", scanResultsLabel, "BOTTOMLEFT", 0, -5)
 
@@ -1133,31 +1194,34 @@ function BZ:CreateSettingsPanel()
     -- Initial display update
     UpdateScanResultsDisplay()
 
+    -- TAB 3: ACHIEVEMENTS
+    local achievementsTab = tabFrames[3]
+
     -- Add Achievement section
-    local addLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    addLabel:SetPoint("TOPLEFT", scanButton, "BOTTOMLEFT", -10, -30)
+    local addLabel = achievementsTab:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    addLabel:SetPoint("TOPLEFT", 10, -10)
     addLabel:SetText("Add Achievement to Track:")
 
     -- Input box for achievement ID
-    local addInput = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    local addInput = CreateFrame("EditBox", nil, achievementsTab, "InputBoxTemplate")
     addInput:SetSize(120, 20)
     addInput:SetPoint("TOPLEFT", addLabel, "BOTTOMLEFT", 0, -5)
     addInput:SetAutoFocus(false)
     addInput:SetNumeric(true)
 
     -- Add button
-    local addButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local addButton = CreateFrame("Button", nil, achievementsTab, "UIPanelButtonTemplate")
     addButton:SetSize(80, 22)
     addButton:SetPoint("LEFT", addInput, "RIGHT", 10, 0)
     addButton:SetText("Add")
 
     -- Tracked achievements table header
-    local tableLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local tableLabel = achievementsTab:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     tableLabel:SetPoint("TOPLEFT", addInput, "BOTTOMLEFT", 0, -30)
     tableLabel:SetText("Tracked Achievements:")
 
     -- Create scroll frame for the table
-    local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", nil, achievementsTab, "UIPanelScrollFrameTemplate")
     scrollFrame:SetSize(500, 300)
     scrollFrame:SetPoint("TOPLEFT", tableLabel, "BOTTOMLEFT", 0, -10)
 
