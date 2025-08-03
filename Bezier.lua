@@ -277,9 +277,8 @@ function BZ:GetPlayersInGroup()
             if unit then
                 local name = UnitName(unit)
                 if name and name ~= "Unknown" then
-                    -- Remove realm suffix if present
-                    local playerName = string.match(name, "([^-]+)")
-                    table.insert(players, playerName)
+                    -- Keep full name with realm information for cross-realm players
+                    table.insert(players, name)
                 end
             end
         end
@@ -341,23 +340,17 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
 
             if checkUnit then
                 local name = UnitName(checkUnit)
-                if name then
-                    local checkPlayerName = string.match(name, "([^-]+)")
-                    if checkPlayerName == playerName then
-                        unit = checkUnit
-                        break
-                    end
+                if name and name == playerName then
+                    unit = checkUnit
+                    break
                 end
             end
         end
     else
         -- Solo player
         local name = UnitName("player")
-        if name then
-            local checkPlayerName = string.match(name, "([^-]+)")
-            if checkPlayerName == playerName then
-                unit = "player"
-            end
+        if name and name == playerName then
+            unit = "player"
         end
     end
 
