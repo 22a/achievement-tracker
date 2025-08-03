@@ -29,7 +29,7 @@ local defaultDB = {
         [41298] = 0, -- Ahead of the Curve: Chrome King Gallywix
     }, -- [achievementID] = count (simple counter)
     settings = {
-        enableDebug = false,
+        enableDebugLogging = false,
         activeAchievementID = 41298, -- Ahead of the Curve: Chrome King Gallywix
         displayFrame = {
             x = 100,
@@ -49,31 +49,6 @@ function BZ:OnAddonLoaded()
         BezierDB = {}
     end
 
-    -- Migrate old AotCCounterDB to new BezierDB
-    if AotCCounterDB and not BezierDB.migrated then
-        for key, value in pairs(AotCCounterDB) do
-            BezierDB[key] = value
-        end
-        BezierDB.migrated = true
-        print("|cff00ff00Bezier|r Migrated data from AotC Counter")
-    end
-
-    -- Migrate old flat settings structure to new nested structure
-    if BezierDB.settings then
-        -- Migrate displayPrefix from flat to nested structure
-        if BezierDB.settings.displayPrefix and not BezierDB.settings.displayFrame then
-            BezierDB.settings.displayFrame = {}
-        end
-        if BezierDB.settings.displayPrefix and not BezierDB.settings.displayFrame.displayPrefix then
-            BezierDB.settings.displayFrame.displayPrefix = BezierDB.settings.displayPrefix
-        end
-
-        -- Migrate fontSize from flat to nested structure
-        if BezierDB.settings.fontSize and not BezierDB.settings.displayFrame.fontSize then
-            BezierDB.settings.displayFrame.fontSize = BezierDB.settings.fontSize
-        end
-    end
-
     -- Merge with defaults (deep merge)
     local function deepMerge(target, source)
         for key, value in pairs(source) do
@@ -89,7 +64,7 @@ function BZ:OnAddonLoaded()
 
     BZ.db = BezierDB
 
-    print("|cff00ff00Bezier|r loaded. Open Interface Options > AddOns > Bezier to configure.")
+    BZ.debugLog("|cff00ff00Bezier|r loaded. Open Interface Options > AddOns > Bezier to configure.")
 
     -- Create settings panel
     BZ:CreateSettingsPanel()
@@ -98,11 +73,16 @@ function BZ:OnAddonLoaded()
     BZ:CreateDisplayFrame()
 end
 
+-- Debug logging function
+function BZ.debugLog(message)
+    if BZ.db and BZ.db.settings and BZ.db.settings.enableDebugLogging then
+        print(message)
+    end
+end
+
 -- Parse achievement message from chat
 function BZ:ParseAchievementMessage(message, sender)
-    if BZ.db.settings.enableDebug then
-        print(string.format("|cff00ff00[BZ Debug]|r Parsing: '%s' from %s", message or "nil", sender or "nil"))
-    end
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Parsing: '%s' from %s", message or "nil", sender or "nil"))
 
     -- Pattern for achievement messages
     local achievementID = string.match(message, "|Hachievement:(%d+):")
@@ -110,9 +90,7 @@ function BZ:ParseAchievementMessage(message, sender)
         achievementID = tonumber(achievementID)
         local achievementName = select(2, GetAchievementInfo(achievementID))
 
-        if BZ.db.settings.enableDebug then
-            print(string.format("|cff00ff00[BZ Debug]|r Found achievement: ID=%d, Name=%s", achievementID, achievementName or "Unknown"))
-        end
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Found achievement: ID=%d, Name=%s", achievementID, achievementName or "Unknown"))
 
         return sender, achievementID, achievementName
     end
@@ -145,23 +123,17 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
         local hadAchievementBefore = BZ.preKillStatus[achievementID][playerName]
         isFirstTime = not hadAchievementBefore
 
-        if BZ.db.settings.enableDebug then
-            print(string.format("|cff00ff00[BZ Debug]|r Pre-kill check for %s: had achievement = %s, counting = %s",
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Pre-kill check for %s: had achievement = %s, counting = %s",
                   playerName, tostring(hadAchievementBefore), tostring(isFirstTime)))
-        end
     else
         -- No pre-kill data available - assume it's first time (fallback behavior)
-        if BZ.db.settings.enableDebug then
-            print(string.format("|cff00ff00[BZ Debug]|r No pre-kill data for %s, assuming first time", playerName))
-        end
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r No pre-kill data for %s, assuming first time", playerName))
     end
 
     -- Only count first-time achievements
     if not isFirstTime then
-        if BZ.db.settings.enableDebug then
-            print(string.format("|cff00ff00[BZ Debug]|r Skipping alt completion for %s: [%d] %s (already had achievement)",
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Skipping alt completion for %s: [%d] %s (already had achievement)",
                   playerName, achievementID, achievementName))
-        end
         return
     end
 
@@ -174,10 +146,8 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
     BZ.db.achievements[achievementID] = BZ.db.achievements[achievementID] + 1
 
     -- Debug output
-    if BZ.db.settings.enableDebug then
-        print(string.format("|cff00ff00[BZ Debug]|r Recorded first-time achievement for %s: [%d] %s (Total: %d)",
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Recorded first-time achievement for %s: [%d] %s (Total: %d)",
               playerName, achievementID, achievementName, BZ.db.achievements[achievementID]))
-    end
 
     -- Update display frame if this is the active achievement
     if BZ.db.settings.activeAchievementID == achievementID then
@@ -201,9 +171,14 @@ function BZ:OnEvent(event, ...)
         end
     elseif event == "GROUP_ROSTER_UPDATE" then
         -- Group composition changed, could trigger a rescan if needed
-        if BZ.db.settings.enableDebug then
-            print("|cff00ff00[BZ Debug]|r Group roster updated")
-        end
+        BZ.debugLog("|cff00ff00[BZ Debug]|r Group roster updated")
+
+        -- Clear scan results when group changes
+        BZ.playersScanned = {}
+        BZ.playersMissingAchievement = {}
+
+        -- Update display frame to show/hide scan button
+        BZ:UpdateDisplayFrame()
 
         -- Auto-scan if we have an active achievement and are in a group
         if BZ.db.settings.activeAchievementID and BZ:GetGroupSize() > 1 and not BZ.groupScanInProgress then
@@ -213,9 +188,7 @@ function BZ:OnEvent(event, ...)
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Player entered world, could be a good time to scan if in a group
-        if BZ.db.settings.enableDebug then
-            print("|cff00ff00[BZ Debug]|r Player entering world")
-        end
+        BZ.debugLog("|cff00ff00[BZ Debug]|r Player entering world")
     end
 end
 
@@ -332,9 +305,7 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
     end
 
     if not unit then
-        if BZ.db.settings.enableDebug then
-            print(string.format("|cff00ff00[BZ Debug]|r Could not find unit for player: %s", playerName))
-        end
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Could not find unit for player: %s", playerName))
         return false
     end
 
@@ -356,15 +327,11 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
             -- Clear the comparison unit
             ClearAchievementComparisonUnit()
 
-            if BZ.db.settings.enableDebug then
-                print(string.format("|cff00ff00[BZ Debug]|r %s achievement status: %s", playerName, tostring(completed)))
-            end
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status: %s", playerName, tostring(completed)))
 
             return completed or false
         else
-            if BZ.db.settings.enableDebug then
-                print(string.format("|cff00ff00[BZ Debug]|r Cannot inspect %s (offline or dead)", playerName))
-            end
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cannot inspect %s (offline or dead)", playerName))
             return false -- Assume they don't have it if we can't check
         end
     end
@@ -374,12 +341,12 @@ end
 function BZ:ScanGroupForActiveAchievement()
     local activeID = BZ.db.settings.activeAchievementID
     if not activeID then
-        print("|cffff0000[BZ]|r No active achievement set for scanning")
+        BZ.debugLog("|cffff0000[BZ]|r No active achievement set for scanning")
         return
     end
 
     if BZ.groupScanInProgress then
-        print("|cffff0000[BZ]|r Group scan already in progress")
+        BZ.debugLog("|cffff0000[BZ]|r Group scan already in progress")
         return
     end
 
@@ -393,7 +360,7 @@ function BZ:ScanGroupForActiveAchievement()
     local players = BZ:GetPlayersInGroup()
     local achievementName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
 
-    print(string.format("|cff00ff00[BZ]|r Scanning %d players for achievement: %s", #players, achievementName))
+    BZ.debugLog(string.format("|cff00ff00[BZ]|r Scanning %d players for achievement: %s", #players, achievementName))
 
     -- Add all players to scan list
     for _, playerName in ipairs(players) do
@@ -415,9 +382,7 @@ function BZ:ProcessNextPlayerScan()
     local playerName = table.remove(BZ.playersToScan, 1)
     local hasAchievement = BZ:PlayerHasAchievement(playerName, BZ.currentScanAchievementID)
 
-    if BZ.db.settings.enableDebug then
-        print(string.format("|cff00ff00[BZ Debug]|r %s has achievement: %s", playerName, tostring(hasAchievement)))
-    end
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s has achievement: %s", playerName, tostring(hasAchievement)))
 
     table.insert(BZ.playersScanned, playerName)
 
@@ -439,21 +404,19 @@ function BZ:CompleteScan()
     local totalPlayers = #BZ.playersScanned
     local missingCount = #BZ.playersMissingAchievement
 
-    print(string.format("|cff00ff00[BZ]|r Scan complete: %d/%d players missing %s", missingCount, totalPlayers, achievementName))
+    BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan complete: %d/%d players missing %s", missingCount, totalPlayers, achievementName))
 
     if missingCount > 0 then
-        print("|cff00ff00[BZ]|r Players missing the achievement:")
+        BZ.debugLog("|cff00ff00[BZ]|r Players missing the achievement:")
         for _, playerName in ipairs(BZ.playersMissingAchievement) do
-            print(string.format("  - %s", playerName))
+            BZ.debugLog(string.format("  - %s", playerName))
         end
     else
-        print("|cff00ff00[BZ]|r All players have the achievement!")
+        BZ.debugLog("|cff00ff00[BZ]|r All players have the achievement!")
     end
 
-    -- Trigger UI update if settings panel is open
-    if BezierSettingsPanel and BezierSettingsPanel:IsVisible() then
-        -- The UI update will be handled by the timer in the scan button click
-    end
+    -- Update display frame to show scan results
+    BZ:UpdateDisplayFrame()
 end
 
 -- Get the current allowlist of players missing the active achievement
@@ -465,7 +428,7 @@ end
 function BZ:PrintAllowlist()
     local activeID = BZ.db.settings.activeAchievementID
     if not activeID then
-        print("|cffff0000[BZ]|r No active achievement set")
+        BZ.debugLog("|cffff0000[BZ]|r No active achievement set")
         return
     end
 
@@ -473,11 +436,11 @@ function BZ:PrintAllowlist()
     local missingCount = #BZ.playersMissingAchievement
 
     if missingCount == 0 then
-        print(string.format("|cff00ff00[BZ]|r Allowlist: No players missing %s", achievementName))
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Allowlist: No players missing %s", achievementName))
     else
-        print(string.format("|cff00ff00[BZ]|r Allowlist for %s (%d players):", achievementName, missingCount))
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Allowlist for %s (%d players):", achievementName, missingCount))
         for _, playerName in ipairs(BZ.playersMissingAchievement) do
-            print(string.format("  - %s", playerName))
+            BZ.debugLog(string.format("  - %s", playerName))
         end
     end
 end
@@ -489,9 +452,7 @@ function BZ:CapturePreKillStatus(achievementID)
     end
 
     if not achievementID then
-        if BZ.db.settings.enableDebug then
-            print("|cff00ff00[BZ Debug]|r No achievement ID provided for pre-kill status")
-        end
+        BZ.debugLog("|cff00ff00[BZ Debug]|r No achievement ID provided for pre-kill status")
         return
     end
 
@@ -503,26 +464,20 @@ function BZ:CapturePreKillStatus(achievementID)
     local players = BZ:GetPlayersInGroup()
     local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
 
-    if BZ.db.settings.enableDebug then
-        print(string.format("|cff00ff00[BZ Debug]|r Capturing pre-kill status for %s", achievementName))
-    end
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Capturing pre-kill status for %s", achievementName))
 
     for _, playerName in ipairs(players) do
         local hasAchievement = BZ:PlayerHasAchievement(playerName, achievementID)
         BZ.preKillStatus[achievementID][playerName] = hasAchievement
 
-        if BZ.db.settings.enableDebug then
-            print(string.format("|cff00ff00[BZ Debug]|r Pre-kill: %s had achievement = %s", playerName, tostring(hasAchievement)))
-        end
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Pre-kill: %s had achievement = %s", playerName, tostring(hasAchievement)))
     end
 end
 
 -- Clear pre-kill status (call this when leaving instance or resetting)
 function BZ:ClearPreKillStatus()
     BZ.preKillStatus = {}
-    if BZ.db.settings.enableDebug then
-        print("|cff00ff00[BZ Debug]|r Pre-kill status cleared")
-    end
+    BZ.debugLog("|cff00ff00[BZ Debug]|r Pre-kill status cleared")
 end
 
 
@@ -533,11 +488,11 @@ function BZ:ToggleTrackedAchievement(achievementID)
     if BZ.db.achievements[achievementID] then
         -- Remove from tracking
         BZ.db.achievements[achievementID] = nil
-        print(string.format("|cff00ff00[BZ]|r Removed achievement %d from tracking", achievementID))
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Removed achievement %d from tracking", achievementID))
     else
         -- Add to tracking with 0 count
         BZ.db.achievements[achievementID] = 0
-        print(string.format("|cff00ff00[BZ]|r Added achievement %d to tracking", achievementID))
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Added achievement %d to tracking", achievementID))
     end
 end
 
@@ -546,25 +501,25 @@ function BZ:ShowTrackedAchievements()
     local activeID = BZ.db.settings.activeAchievementID
     local count = 0
 
-    print("|cff00ff00[BZ]|r Currently tracked achievements:")
+    BZ.debugLog("|cff00ff00[BZ]|r Currently tracked achievements:")
     for achievementID, achievementCount in pairs(BZ.db.achievements) do
         local achievementName = select(2, GetAchievementInfo(achievementID)) or "Unknown Achievement"
         local activeMarker = (achievementID == activeID) and " |cffff8000[ACTIVE]|r" or ""
-        print(string.format("  [%d] %s: %d times%s", achievementID, achievementName, achievementCount, activeMarker))
+        BZ.debugLog(string.format("  [%d] %s: %d times%s", achievementID, achievementName, achievementCount, activeMarker))
         count = count + 1
     end
 
     if count == 0 then
-        print("|cff00ff00[BZ]|r No achievements currently tracked")
+        BZ.debugLog("|cff00ff00[BZ]|r No achievements currently tracked")
     end
 
     -- Show active achievement info
     if activeID then
         local activeName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
         local activeCount = BZ.db.achievements[activeID] or 0
-        print(string.format("|cff00ff00[BZ]|r Active display: [%d] %s (%d times)", activeID, activeName, activeCount))
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Active display: [%d] %s (%d times)", activeID, activeName, activeCount))
     else
-        print("|cff00ff00[BZ]|r No active achievement set for display")
+        BZ.debugLog("|cff00ff00[BZ]|r No active achievement set for display")
     end
 end
 
@@ -578,7 +533,7 @@ function BZ:SetActiveAchievement(achievementID)
         BZ.db.achievements[achievementID] = 0
     end
 
-    print(string.format("|cff00ff00[BZ]|r Set active achievement: [%d] %s", achievementID, achievementName))
+    BZ.debugLog(string.format("|cff00ff00[BZ]|r Set active achievement: [%d] %s", achievementID, achievementName))
     BZ:UpdateDisplayFrame()
 end
 -- Create settings panel
@@ -614,12 +569,12 @@ function BZ:CreateSettingsPanel()
             else
                 BZ:CreateDisplayFrame()
             end
-            print("|cff00ff00[BZ]|r Display frame enabled")
+            BZ.debugLog("|cff00ff00[BZ]|r Display frame enabled")
         else
             if BZ.displayFrame then
                 BZ.displayFrame:Hide()
             end
-            print("|cff00ff00[BZ]|r Display frame disabled")
+            BZ.debugLog("|cff00ff00[BZ]|r Display frame disabled")
         end
     end)
 
@@ -648,9 +603,9 @@ function BZ:CreateSettingsPanel()
         if newPrefix and newPrefix ~= "" then
             BZ.db.settings.displayFrame.displayPrefix = newPrefix
             BZ:UpdateDisplayFrame()
-            print("|cff00ff00[BZ]|r Display prefix updated to: '" .. newPrefix .. "'")
+            BZ.debugLog("|cff00ff00[BZ]|r Display prefix updated to: '" .. newPrefix .. "'")
         else
-            print("|cffff0000[BZ]|r Display prefix cannot be empty")
+            BZ.debugLog("|cffff0000[BZ]|r Display prefix cannot be empty")
         end
     end)
 
@@ -662,7 +617,7 @@ function BZ:CreateSettingsPanel()
         BZ.db.settings.displayFrame.displayPrefix = DEFAULT_PREFIX
         prefixInput:SetText(DEFAULT_PREFIX)
         BZ:UpdateDisplayFrame()
-        print("|cff00ff00[BZ]|r Display prefix reset to default: '" .. DEFAULT_PREFIX .. "'")
+        BZ.debugLog("|cff00ff00[BZ]|r Display prefix reset to default: '" .. DEFAULT_PREFIX .. "'")
     end)
 
     -- Font Size setting
@@ -702,15 +657,15 @@ function BZ:CreateSettingsPanel()
     local debugCheckbox = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
     debugCheckbox:SetSize(20, 20)
     debugCheckbox:SetPoint("TOPLEFT", generalLabel, "BOTTOMLEFT", 10, -10)
-    debugCheckbox:SetChecked(BZ.db.settings.enableDebug)
+    debugCheckbox:SetChecked(BZ.db.settings.enableDebugLogging)
 
     local debugLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     debugLabel:SetPoint("LEFT", debugCheckbox, "RIGHT", 5, 0)
-    debugLabel:SetText("Enable Debug Mode")
+    debugLabel:SetText("Enable Debug Logging")
 
     debugCheckbox:SetScript("OnClick", function()
-        BZ.db.settings.enableDebug = debugCheckbox:GetChecked()
-        print(string.format("|cff00ff00[BZ]|r Debug mode: %s", BZ.db.settings.enableDebug and "ON" or "OFF"))
+        BZ.db.settings.enableDebugLogging = debugCheckbox:GetChecked()
+        BZ.debugLog(string.format("|cff00ff00[BZ]|r Debug logging: %s", BZ.db.settings.enableDebugLogging and "ON" or "OFF"))
     end)
 
     -- Group Scanning Section
@@ -975,10 +930,10 @@ function BZ:CreateSettingsPanel()
                 addInput:SetText("") -- Clear input
                 UpdateAchievementsTable() -- Refresh table
             else
-                print("|cffff0000[BZ]|r Invalid achievement ID: " .. achievementID)
+                BZ.debugLog("|cffff0000[BZ]|r Invalid achievement ID: " .. achievementID)
             end
         else
-            print("|cffff0000[BZ]|r Please enter a valid achievement ID")
+            BZ.debugLog("|cffff0000[BZ]|r Please enter a valid achievement ID")
         end
     end)
 
@@ -988,7 +943,7 @@ function BZ:CreateSettingsPanel()
         prefixInput:SetText(BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX)
         fontSlider:SetValue(BZ.db.settings.displayFrame.fontSize or 12)
         fontSlider.Text:SetText("Size: " .. (BZ.db.settings.displayFrame.fontSize or 12))
-        debugCheckbox:SetChecked(BZ.db.settings.enableDebug)
+        debugCheckbox:SetChecked(BZ.db.settings.enableDebugLogging)
     end
 
     -- Panel show/hide handlers
@@ -1041,9 +996,26 @@ function BZ:CreateDisplayFrame()
 
     -- Create text
     local text = BZ.displayFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    text:SetPoint("CENTER")
+    text:SetPoint("LEFT", 10, 0)
     text:SetTextColor(1, 1, 1, 1)
     BZ.displayFrame.text = text
+
+    -- Create scan button (initially hidden)
+    local scanButton = CreateFrame("Button", nil, BZ.displayFrame, "UIPanelButtonTemplate")
+    scanButton:SetSize(50, 20)
+    scanButton:SetPoint("RIGHT", -10, 0)
+    scanButton:SetText("Scan")
+    scanButton:Hide()
+    BZ.displayFrame.scanButton = scanButton
+
+    -- Scan button click handler
+    scanButton:SetScript("OnClick", function()
+        BZ:ScanGroupForActiveAchievement()
+        -- Update display after a short delay to show results
+        C_Timer.After(0.5, function()
+            BZ:UpdateDisplayFrame()
+        end)
+    end)
 
     -- Mouse handlers
     BZ.displayFrame:SetScript("OnMouseDown", function(self, button)
@@ -1087,25 +1059,65 @@ function BZ:UpdateDisplayFrame()
     local activeID = BZ.db.settings.activeAchievementID
     if not activeID then
         BZ.displayFrame.text:SetText("No active achievement set")
+        BZ.displayFrame.scanButton:Hide()
+        -- Auto-resize frame for text only
+        local textWidth = BZ.displayFrame.text:GetStringWidth()
+        local textHeight = BZ.displayFrame.text:GetStringHeight()
+        local frameWidth = math.max(textWidth + 20, 80)
+        local frameHeight = math.max(textHeight + 12, 20)
+        BZ.displayFrame:SetSize(frameWidth, frameHeight)
         return
     end
 
-    local count = BZ.db.achievements[activeID] or 0
-    local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
-    local fontSize = BZ.db.settings.displayFrame.fontSize or 12
+    local groupSize = BZ:GetGroupSize()
+    local inGroup = groupSize > 1
 
     -- Update font size
+    local fontSize = BZ.db.settings.displayFrame.fontSize or 12
     local fontPath, _, fontFlags = BZ.displayFrame.text:GetFont()
     BZ.displayFrame.text:SetFont(fontPath or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags or "OUTLINE")
 
+    local displayText
+    local showScanButton = false
+
+    if inGroup then
+        -- Check if we have scan results
+        local missingCount = #BZ.playersMissingAchievement
+        local totalPlayers = #BZ.playersScanned
+
+        if totalPlayers > 0 and totalPlayers == groupSize then
+            -- Show scan results: X / Y format
+            displayText = string.format("%d / %d", missingCount, groupSize)
+        else
+            -- Show achievement count and enable scan button
+            local count = BZ.db.achievements[activeID] or 0
+            local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
+            displayText = string.format("%s: %d", prefix, count)
+        end
+        showScanButton = true
+    else
+        -- Solo player - show normal count
+        local count = BZ.db.achievements[activeID] or 0
+        local prefix = BZ.db.settings.displayFrame.displayPrefix or DEFAULT_PREFIX
+        displayText = string.format("%s: %d", prefix, count)
+        showScanButton = false
+    end
+
     -- Set text
-    local displayText = string.format("%s: %d", prefix, count)
     BZ.displayFrame.text:SetText(displayText)
+
+    -- Show/hide scan button
+    if showScanButton then
+        BZ.displayFrame.scanButton:Show()
+    else
+        BZ.displayFrame.scanButton:Hide()
+    end
 
     -- Auto-resize frame
     local textWidth = BZ.displayFrame.text:GetStringWidth()
     local textHeight = BZ.displayFrame.text:GetStringHeight()
-    local frameWidth = math.max(textWidth + 20, 80)
+    local buttonWidth = showScanButton and 60 or 0 -- 50 for button + 10 padding
+    local frameWidth = math.max(textWidth + buttonWidth + 20, 80)
     local frameHeight = math.max(textHeight + 12, 20)
     BZ.displayFrame:SetSize(frameWidth, frameHeight)
 end
