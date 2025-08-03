@@ -386,7 +386,25 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
     else
         -- For other players, try to inspect their achievements
         -- This requires the player to be inspectable and may not always work
-        if UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
+
+        -- Check if the unit exists at all
+        if not UnitExists(unit) then
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cannot inspect %s (unit does not exist)", playerName))
+            return "unknown"
+        end
+
+        -- Get unit info for debugging
+        local unitName = UnitName(unit)
+        local isCrossRealm = unitName and string.find(unitName, "-") ~= nil
+        local isConnected = UnitIsConnected(unit)
+        local isDead = UnitIsDeadOrGhost(unit)
+        local canInspect = CanInspect(unit)
+
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Scanning %s: unit=%s, connected=%s, dead=%s, canInspect=%s, crossRealm=%s",
+            playerName, unit, tostring(isConnected), tostring(isDead), tostring(canInspect), tostring(isCrossRealm)))
+
+        -- Try to scan regardless of connection status (like Instance Achievement Tracker does)
+        if true then -- Always try to scan
             -- Try to request inspection data first (this may help with cross-realm players)
             if CanInspect(unit) then
                 NotifyInspect(unit)
@@ -443,13 +461,8 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
                 return "unknown"
             end
         else
-            local reason = "offline"
-            if UnitIsDeadOrGhost(unit) then
-                reason = "dead or ghost"
-            elseif not UnitIsConnected(unit) then
-                reason = "offline or disconnected"
-            end
-            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cannot inspect %s (%s)", playerName, reason))
+            -- This should never happen since we always try to scan now
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Unexpected: Cannot inspect %s (should not reach here)", playerName))
             return "unknown"
         end
     end
