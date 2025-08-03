@@ -381,10 +381,12 @@ function BZ:ScanNextPlayer()
 
             if completed ~= nil then
                 BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, completed)
+                print(string.format("|cff00ff00[BZ CONFIRMED]|r %s has %s the achievement %s (TIMEOUT SCAN)", playerName, completed and "COMPLETED" or "NOT COMPLETED", BZ.currentScanAchievementID))
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Got achievement data on timeout for %s: %s", playerName, completed and "completed" or "not_completed"))
             else
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r No achievement data available for %s on timeout", playerName))
                 BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
+                print(string.format("|cffff0000[BZ FAILED]|r Could not determine achievement status for %s (TIMEOUT)", playerName))
             end
 
             -- Remove from queue and continue
@@ -401,6 +403,7 @@ function BZ:ScanNextPlayer()
                 -- For our own character, use GetAchievementInfo
                 local _, _, _, playerCompleted = GetAchievementInfo(BZ.currentScanAchievementID)
                 completed = playerCompleted
+                print(string.format("|cff00ff00[BZ CONFIRMED]|r %s (PLAYER) has %s the achievement %s", playerName, completed and "COMPLETED" or "NOT COMPLETED", BZ.currentScanAchievementID))
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player achievement check: %s", tostring(completed)))
             else
                 -- For other players, use comparison - try multiple times for cross-realm
@@ -431,26 +434,25 @@ function BZ:ScanNextPlayer()
 
             if completed ~= nil then
                 BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, completed)
+                print(string.format("|cff00ff00[BZ CONFIRMED]|r %s has %s the achievement %s", playerName, completed and "COMPLETED" or "NOT COMPLETED", BZ.currentScanAchievementID))
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cached result for %s: %s", playerName, completed and "completed" or "not_completed"))
             else
-                -- Try a different approach - clear and re-set comparison unit
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Trying alternative approach for %s", playerName))
+                -- Try immediate re-attempt without timers
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r First attempt failed, trying immediate re-attempt for %s", playerName))
                 ClearAchievementComparisonUnit()
-                C_Timer.After(0.1, function()
-                    SetAchievementComparisonUnit(unit)
-                    C_Timer.After(0.2, function()
-                        local _, _, _, altCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
-                        ClearAchievementComparisonUnit()
+                SetAchievementComparisonUnit(unit)
+                local _, _, _, altCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
+                ClearAchievementComparisonUnit()
 
-                        if altCompleted ~= nil then
-                            BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, altCompleted)
-                            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Alternative approach worked for %s: %s", playerName, altCompleted and "completed" or "not_completed"))
-                        else
-                            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Alternative approach also failed for %s", playerName))
-                            BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
-                        end
-                    end)
-                end)
+                if altCompleted ~= nil then
+                    BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, altCompleted)
+                    print(string.format("|cff00ff00[BZ CONFIRMED]|r %s has %s the achievement %s", playerName, altCompleted and "COMPLETED" or "NOT COMPLETED", BZ.currentScanAchievementID))
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Immediate re-attempt worked for %s: %s", playerName, altCompleted and "completed" or "not_completed"))
+                else
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Immediate re-attempt also failed for %s", playerName))
+                    BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
+                    print(string.format("|cffff0000[BZ FAILED]|r Could not determine achievement status for %s", playerName))
+                end
             end
 
             -- Remove from queue and continue
