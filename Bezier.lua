@@ -72,13 +72,23 @@ function BZ:OnAddonLoaded()
 
     BZ.db = BezierDB
 
-    BZ.debugLog("|cff00ff00Bezier|r loaded. Open Interface Options > AddOns > Bezier to configure.")
+    print("|cff00ff00Bezier|r loaded. Open Interface Options > AddOns > Bezier to configure.")
 
-    -- Create settings panel
-    BZ:CreateSettingsPanel()
+    -- Create settings panel with error handling
+    local success, err = pcall(function()
+        BZ:CreateSettingsPanel()
+    end)
+    if not success then
+        print("|cffff0000[BZ Error]|r Failed to create settings panel: " .. tostring(err))
+    end
 
-    -- Create display frame
-    BZ:CreateDisplayFrame()
+    -- Create display frame with error handling
+    local success2, err2 = pcall(function()
+        BZ:CreateDisplayFrame()
+    end)
+    if not success2 then
+        print("|cffff0000[BZ Error]|r Failed to create display frame: " .. tostring(err2))
+    end
 end
 
 -- Debug logging function
