@@ -269,9 +269,12 @@ function BZ:ProcessInspectReady(guid)
 
     BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r INSPECT_ACHIEVEMENT_READY for %s (GUID: %s)", BZ.playerCurrentlyScanning, tostring(guid)))
 
-    -- Signal that the scan was successful by clearing the current player
-    BZ.playerCurrentlyScanning = nil
-    BZ.scanCounter = BZ.scanCounter + 1
+    -- Wait a moment for achievement data to be available (like Instance Achievement Tracker)
+    C_Timer.After(0.1, function()
+        -- Signal that the scan was successful by clearing the current player
+        BZ.playerCurrentlyScanning = nil
+        BZ.scanCounter = BZ.scanCounter + 1
+    end)
 end
 
 -- Start sequential achievement scanning
@@ -357,9 +360,10 @@ function BZ:ScanNextPlayer()
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player achievement check (timeout): %s", tostring(completed)))
             else
                 -- For other players, use comparison
-                local _, _, _, otherCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
+                local id, name, points, otherCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
                 completed = otherCompleted
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check (timeout) for %s: %s", playerName, tostring(completed)))
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check (timeout) for %s: id=%s, name=%s, points=%s, completed=%s",
+                    playerName, tostring(id), tostring(name), tostring(points), tostring(completed)))
             end
 
             ClearAchievementComparisonUnit()
@@ -388,9 +392,10 @@ function BZ:ScanNextPlayer()
                 BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player achievement check: %s", tostring(completed)))
             else
                 -- For other players, use comparison
-                local _, _, _, otherCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
+                local id, name, points, otherCompleted = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
                 completed = otherCompleted
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check for %s: %s", playerName, tostring(completed)))
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check for %s: id=%s, name=%s, points=%s, completed=%s",
+                    playerName, tostring(id), tostring(name), tostring(points), tostring(completed)))
             end
 
             ClearAchievementComparisonUnit()
