@@ -287,11 +287,16 @@ function BZ:ProcessInspectReady(guid)
         end
 
         SetAchievementComparisonUnit(unit)
-        local id, name, points, completed = GetAchievementComparisonInfo(achievementID)
+        -- GetAchievementComparisonInfo returns: id, name, points, completed, month, day, year, description, flags, icon, rewardText, isGuild, wasEarnedByMe
+        local achievementData = {GetAchievementComparisonInfo(achievementID)}
+        local id = achievementData[1]
+        local name = achievementData[2]
+        local points = achievementData[3]
+        local completed = achievementData[4]
         ClearAchievementComparisonUnit()
 
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s GetAchievementComparisonInfo returned: id=%s, name=%s, completed=%s",
-            playerName, tostring(id), tostring(name), tostring(completed)))
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s GetAchievementComparisonInfo returned: id=%s, name=%s, points=%s, completed=%s (total values: %d)",
+            playerName, tostring(id), tostring(name), tostring(points), tostring(completed), #achievementData))
 
         if completed ~= nil then
             local result = completed and "completed" or "not_completed"
@@ -309,8 +314,12 @@ function BZ:ProcessInspectReady(guid)
 
             if result == "completed" then
                 table.insert(BZ.scanResults[achievementID].completed, playerName)
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Added %s to completed cache. Cache now has %d completed players",
+                    playerName, #BZ.scanResults[achievementID].completed))
             else
                 table.insert(BZ.scanResults[achievementID].notCompleted, playerName)
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Added %s to not completed cache. Cache now has %d not completed players",
+                    playerName, #BZ.scanResults[achievementID].notCompleted))
             end
         else
             BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s achievement status still unknown after inspect ready", playerName))
