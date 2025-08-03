@@ -12,24 +12,25 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("CHAT_MSG_ACHIEVEMENT")
 frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+frame:RegisterEvent("CHAT_MSG_SYSTEM")  -- IAT: Used to detect when players join/leave group
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_LEAVING_WORLD")
 frame:RegisterEvent("INSPECT_ACHIEVEMENT_READY")
 
--- Group scanning variables
-BZ.groupScanInProgress = false
-BZ.currentScanAchievementID = nil
-BZ.scanCounter = 0
+-- Achievement Scanning Variables (Exact IAT Implementation)
+local playersToScan = {}                    -- Queue of players waiting for scanning
+local playersScanned = {}                   -- List of successfully scanned players
+local rescanNeeded = false                  -- Set to true if rescan needed during current scan
+local playerCurrentlyScanning = nil         -- Currently scanning player unit
+local scanInProgress = false                -- Global scan lock - prevents concurrent scans
+BZ.scanFinished = false                     -- True when everyone scanned successfully (exposed for UI)
+local scanAnnounced = false                 -- Whether scan announcement was made
+local scanCounter = 0                       -- Incremented to invalidate stale timers
+BZ.currentComparisonUnit = nil              -- Name of player being compared (for event validation)
 
 BZ.scanResults = {} -- Scan results and cache: [achievementID] = {completed={}, notCompleted={}, timestamp=time, zone=zone}
 BZ.currentZone = nil -- Track current zone to detect instance changes
-BZ.periodicScanTimer = nil -- Timer for periodic scanning
 BZ.scanStartTime = nil -- Track scan timing
-
--- Sequential achievement scanning (Instance Achievement Tracker approach)
-BZ.playersToScan = {} -- Queue of players waiting for scanning
-BZ.playerCurrentlyScanning = nil -- Currently scanning player name
-BZ.scanCounter = 0 -- Incremented each scan to validate timers
 BZ.currentScanAchievementID = nil -- Achievement ID being scanned
 
 -- Default database structure
@@ -155,32 +156,6 @@ function BZ:RecordAchievement(playerName, achievementID, achievementName)
     BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Recorded first-time achievement for %s: [%d] %s (Total: %d)",
               playerName, achievementID, achievementName, BZ.db.achievements[achievementID]))
 
-    -- Update scan results to reflect that this player now has the achievement
-    if BZ.scanResults[achievementID] then
-        local results = BZ.scanResults[achievementID]
-
-        -- Remove player from notCompleted list if they're there
-        for i, notCompletedPlayer in ipairs(results.notCompleted) do
-            if notCompletedPlayer == playerName then
-                table.remove(results.notCompleted, i)
-                break
-            end
-        end
-
-        -- Add to completed list if not already there
-        local alreadyInCompleted = false
-        for _, completedPlayer in ipairs(results.completed) do
-            if completedPlayer == playerName then
-                alreadyInCompleted = true
-                break
-            end
-        end
-
-        if not alreadyInCompleted then
-            table.insert(results.completed, playerName)
-        end
-    end
-
     -- Update display frame if this is the active achievement
     if BZ.db.settings.activeAchievementID == achievementID then
         BZ:UpdateDisplayFrame()
@@ -202,18 +177,43 @@ function BZ:OnEvent(event, ...)
             BZ:RecordAchievement(playerName, achievementID, achievementName)
         end
     elseif event == "GROUP_ROSTER_UPDATE" then
-        -- Group composition changed, start/stop periodic scanning
-        BZ.debugLog("|cff00ff00[BZ Debug]|r Group roster updated")
+        -- IAT: Fired whenever the composition of the group changes
+        BZ.debugLog("|cff00ff00[BZ Debug]|r Group Roster Update")
 
-        -- Start or stop periodic scanning based on group status
-        if BZ:GetGroupSize() > 1 and BZ.db.settings.activeAchievementID then
-            BZ:StartPeriodicScanning()
+        if scanInProgress == false then
+            -- No scan in progress - start new scan immediately
+            BZ.debugLog("|cff00ff00[BZ Debug]|r Starting Scan")
+            scanInProgress = true
+            BZ:GetPlayersInGroup()
         else
-            BZ:StopPeriodicScanning()
+            -- Scan already in progress - defer rescan until current scan completes
+            BZ.debugLog("|cff00ff00[BZ Debug]|r Scan in progress. Asking for rescan")
+            rescanNeeded = true
         end
 
-        -- Update display frame to show/hide scan button
+        -- Update display frame
         BZ:UpdateDisplayFrame()
+    elseif event == "CHAT_MSG_SYSTEM" then
+        -- IAT: Used to detect when players join/leave group
+        local message = ...
+        local chatStrs = {"joins the party", "joined the instance group", "joined the raid group", "joined a raid group", "leaves the party", "left the instance group", "leaves the party", "left the raid group"}
+        for i = 1, #chatStrs do
+            if string.match(message, chatStrs[i]) then
+                BZ.debugLog("|cff00ff00[BZ Debug]|r CHAT_MSG_SYSTEM: " .. message)
+
+                if scanInProgress == false then
+                    -- No scan in progress - start new scan immediately
+                    BZ.debugLog("|cff00ff00[BZ Debug]|r Starting Scan")
+                    scanInProgress = true
+                    BZ:GetPlayersInGroup()
+                else
+                    -- Scan already in progress - defer rescan until current scan completes
+                    BZ.debugLog("|cff00ff00[BZ Debug]|r Scan in progress. Asking for rescan")
+                    rescanNeeded = true
+                end
+                break
+            end
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Player entered world, check if we changed zones and clear cache if needed
         local newZone = GetZoneText()
@@ -225,19 +225,238 @@ function BZ:OnEvent(event, ...)
 
         BZ.debugLog("|cff00ff00[BZ Debug]|r Player entering world")
     elseif event == "PLAYER_LEAVING_WORLD" then
-        -- Stop periodic scanning when leaving world
-        BZ:StopPeriodicScanning()
+        -- Reset scanning variables when leaving world
+        BZ:ResetScanningVariables()
     elseif event == "INSPECT_ACHIEVEMENT_READY" then
-        -- Achievement inspection data is ready
+        -- IAT: Achievement inspection data is ready
         local guid = ...
         BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r INSPECT_ACHIEVEMENT_READY fired for GUID: %s", tostring(guid)))
-        BZ:ProcessInspectReady(guid)
+        BZ:ProcessInspectAchievementReady(guid)
     end
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)
     BZ:OnEvent(event, ...)
 end)
+
+-- IAT Helper function: Check if a value exists in a table
+function BZ:has_value(tab, val)
+    for index, value in ipairs(tab) do
+        if value == val then
+            return true
+        end
+    end
+    return false
+end
+
+-- IAT: Reset scanning variables (called when leaving world)
+function BZ:ResetScanningVariables()
+    BZ.debugLog("|cff00ff00[BZ Debug]|r Resetting scanning variables")
+    playersToScan = {}
+    playersScanned = {}
+    rescanNeeded = false
+    playerCurrentlyScanning = nil
+    scanInProgress = false
+    BZ.scanFinished = false
+    scanAnnounced = false
+end
+
+-- IAT: Get list of players in current group
+function BZ:GetPlayersInGroup()
+    if not BZ.db.settings.activeAchievementID then
+        BZ.debugLog("|cff00ff00[BZ Debug]|r No active achievement set, skipping scan")
+        return
+    end
+
+    -- Only announce scanning once
+    if scanAnnounced == false then
+        print("|cff00ff00[Bezier]|r Starting achievement scan for " .. (select(2, GetAchievementInfo(BZ.db.settings.activeAchievementID)) or "Unknown Achievement"))
+        scanAnnounced = true
+    end
+
+    local groupSize = BZ:GetGroupSize()
+    scanInProgress = true
+    BZ.scanFinished = false
+
+    if groupSize > 1 then
+        -- We are in a group
+        local groupType = BZ:GetGroupType()
+        for i = 1, groupSize do
+            local unit
+            if groupType == "PARTY" then
+                if i < groupSize then
+                    unit = "party" .. i
+                else
+                    unit = "player"
+                end
+            elseif groupType == "RAID" then
+                unit = "raid" .. i
+            end
+
+            local name, realm = UnitName(unit)
+            if name and name ~= "Unknown" then
+                -- Use simple name for IAT compatibility
+                local playerName = name
+                if BZ:has_value(playersScanned, playerName) == false and
+                   BZ:has_value(playersToScan, playerName) == false then
+                    table.insert(playersToScan, playerName)
+                end
+            end
+        end
+    else
+        -- Solo player
+        local name, realm = UnitName("player")
+        if name then
+            local playerName = name
+            if BZ:has_value(playersScanned, playerName) == false and
+               BZ:has_value(playersToScan, playerName) == false then
+                table.insert(playersToScan, playerName)
+            end
+        end
+    end
+
+    rescanNeeded = false
+
+    -- Start scanning or complete if no players to scan
+    if #playersToScan > 0 then
+        BZ:GetInstanceAchievements()
+    else
+        BZ.debugLog("|cff00ff00[BZ Debug]|r No players to scan")
+        scanInProgress = false
+        BZ.scanFinished = true
+    end
+end
+
+-- IAT: Core scanning function - processes one player at a time
+function BZ:GetInstanceAchievements()
+    ClearAchievementComparisonUnit()
+
+    -- Make sure the player we are about to scan is still in the group
+    if UnitExists(playersToScan[1]) then
+        playerCurrentlyScanning = playersToScan[1]
+        BZ.currentComparisonUnit = UnitName(playersToScan[1])
+
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Setting comparison unit to: %s", BZ.currentComparisonUnit))
+
+        -- Check if the achievement UI is open before setting the comparison unit
+        if _G["AchievementFrameComparison"] then
+            -- Temporarily disable the event while we do our scanning
+            _G["AchievementFrameComparison"]:UnregisterEvent("INSPECT_ACHIEVEMENT_READY")
+            SetAchievementComparisonUnit(playersToScan[1])
+        else
+            -- Achievement Frame has not been loaded so go ahead and set the comparison unit
+            SetAchievementComparisonUnit(playersToScan[1])
+        end
+
+        -- Set timeout with scan counter validation
+        local scanCounterloc = scanCounter
+        C_Timer.After(2, function()
+            -- Check if the scan is still valid or not
+            if scanCounterloc == scanCounter then
+                -- Last player to scan was not successful
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Timeout scanning %s", playersToScan[1] and UnitName(playersToScan[1]) or "unknown"))
+                rescanNeeded = true
+                if playersToScan[1] ~= nil then
+                    table.remove(playersToScan, 1)
+                end
+
+                if #playersToScan > 0 then
+                    BZ:GetInstanceAchievements()
+                elseif #playersToScan == 0 and rescanNeeded == true then
+                    -- Achievement scanning finished but some players still need scanning
+                    BZ.debugLog("|cff00ff00[BZ Debug]|r Scan finished but rescan needed. Waiting 10 seconds then trying again")
+                    C_Timer.After(10, function()
+                        scanInProgress = true
+                        BZ:GetPlayersInGroup()
+                    end)
+                end
+            end
+        end)
+    else
+        -- Player no longer exists - trigger rescan
+        rescanNeeded = true
+        scanInProgress = true
+        BZ:GetPlayersInGroup()
+    end
+end
+
+-- IAT: Process INSPECT_ACHIEVEMENT_READY event
+function BZ:ProcessInspectAchievementReady(guid)
+    if (guid and C_PlayerInfo.GUIDIsPlayer(guid)) then
+        local class, classFilename, race, raceFilename, sex, name, realm = GetPlayerInfoByGUID(guid)
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r INSPECT_ACHIEVEMENT_READY fired for: %s", name))
+
+        -- Check if this event is for our current scan
+        if BZ.currentComparisonUnit == name then
+            -- Make sure the player is still online since achievement scanning may happen some time after scanning players
+            if UnitExists(playerCurrentlyScanning) then
+                -- Check achievement completion status
+                local completed, _month, _day, _year = GetAchievementComparisonInfo(BZ.db.settings.activeAchievementID)
+
+                -- Cache the result
+                BZ:CachePlayerResult(name, BZ.db.settings.activeAchievementID, completed or false)
+
+                if completed then
+                    print(string.format("|cff00ff00[BZ CONFIRMED]|r %s has COMPLETED the achievement", name))
+                else
+                    print(string.format("|cffffff00[BZ CONFIRMED]|r %s has NOT COMPLETED the achievement", name))
+                end
+
+                -- Move player from toScan to scanned
+                table.insert(playersScanned, playersToScan[1])
+                table.remove(playersToScan, 1)
+                playerCurrentlyScanning = nil
+
+                -- Increment scan counter to invalidate pending timers
+                scanCounter = scanCounter + 1
+
+                -- Continue scanning or complete
+                if #playersToScan > 0 then
+                    -- More players to scan
+                    BZ:GetInstanceAchievements()
+                elseif #playersToScan == 0 and rescanNeeded == false and #playersScanned == BZ:GetGroupSize() then
+                    -- Perfect completion - all players scanned successfully
+                    print(string.format("|cff00ff00[Bezier]|r Achievement scan finished (%d/%d)", #playersScanned, BZ:GetGroupSize()))
+                    scanInProgress = false
+                    BZ.scanFinished = true
+
+                    -- Re-enable Blizzard achievement frame
+                    if _G["AchievementFrameComparison"] ~= nil then
+                        _G["AchievementFrameComparison"]:RegisterEvent("INSPECT_ACHIEVEMENT_READY")
+                    end
+
+                    -- Update display
+                    BZ:UpdateDisplayFrame()
+                elseif #playersToScan == 0 and rescanNeeded == true then
+                    -- Scan complete but rescan needed (group changed during scan)
+                    BZ.debugLog("|cff00ff00[BZ Debug]|r Scan finished but rescan needed. Waiting 10 seconds then trying again")
+
+                    -- Re-enable Blizzard achievement frame
+                    if _G["AchievementFrameComparison"] ~= nil then
+                        _G["AchievementFrameComparison"]:RegisterEvent("INSPECT_ACHIEVEMENT_READY")
+                    end
+
+                    -- Schedule rescan
+                    C_Timer.After(10, function()
+                        scanInProgress = true
+                        BZ:GetPlayersInGroup()
+                    end)
+                end
+            else
+                -- Player went offline during scan
+                rescanNeeded = true
+            end
+        else
+            -- Someone else called the INSPECT_ACHIEVEMENT_READY event
+            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Incorrect INSPECT_ACHIEVEMENT_READY call for %s", name))
+        end
+    end
+
+    -- Always forward to Blizzard's achievement frame if it exists
+    if (AchievementFrame and AchievementFrame.isComparison and AchievementFrameComparison) then
+        AchievementFrameComparison_OnEvent(AchievementFrameComparison, "INSPECT_ACHIEVEMENT_READY", guid)
+    end
+end
 
 -- Get current group size
 function BZ:GetGroupSize()
@@ -260,161 +479,25 @@ function BZ:GetGroupType()
     end
 end
 
--- Process INSPECT_ACHIEVEMENT_READY event (Sequential approach)
-function BZ:ProcessInspectReady(guid)
-    if not BZ.playerCurrentlyScanning then
-        BZ.debugLog("|cff00ff00[BZ Debug]|r INSPECT_ACHIEVEMENT_READY but no current scan")
+-- Simple trigger function for manual scans
+function BZ:ScanGroupForActiveAchievement()
+    local activeID = BZ.db.settings.activeAchievementID
+    if not activeID then
+        BZ.debugLog("|cffff0000[BZ]|r No active achievement set for scanning")
         return
     end
 
-    local playerName = BZ.playerCurrentlyScanning
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r INSPECT_ACHIEVEMENT_READY for %s (GUID: %s)", playerName, tostring(guid)))
+    if scanInProgress then
+        BZ.debugLog("|cffff0000[BZ]|r Scan already in progress")
+        return
+    end
 
-    -- Wait 3 seconds for achievement data to be fully available
-    C_Timer.After(3, function()
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Processing %s after 3 second wait", playerName))
-
-        -- Find the unit for this player
-        local unit = BZ:FindUnitForPlayer(playerName)
-        if not unit then
-            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Could not find unit for %s after wait", playerName))
-            BZ:CachePlayerAsUnknown(playerName, BZ.currentScanAchievementID)
-            print(string.format("|cffff0000[BZ FAILED]|r Could not find unit for %s", playerName))
-        else
-            -- Get achievement data
-            local completed = nil
-            if unit == "player" then
-                local _, _, _, playerCompleted = GetAchievementInfo(BZ.currentScanAchievementID)
-                completed = playerCompleted
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player achievement check: %s", tostring(completed)))
-            else
-                -- CRITICAL: Get the data BEFORE clearing the comparison unit
-                local completed, month, day, year = GetAchievementComparisonInfo(BZ.currentScanAchievementID)
-                -- Now it's safe to clear
-                ClearAchievementComparisonUnit()
-                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Comparison achievement check: completed=%s, month=%s, day=%s, year=%s",
-                    tostring(completed), tostring(month), tostring(day), tostring(year)))
-            end
-
-            -- Cache result - treat nil as "not completed" (if they had it, we'd likely get true)
-            local finalCompleted = completed or false  -- nil becomes false
-            BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, finalCompleted)
-
-            if completed == nil then
-                print(string.format("|cffffff00[BZ CONFIRMED]|r %s has NOT COMPLETED the achievement (no data available)", playerName))
-            else
-                print(string.format("|cff00ff00[BZ CONFIRMED]|r %s has %s the achievement", playerName, completed and "COMPLETED" or "NOT COMPLETED"))
-            end
-        end
-
-        -- Continue to next player
-        BZ.playerCurrentlyScanning = nil
-        BZ.scanCounter = BZ.scanCounter + 1
-        table.remove(BZ.playersToScan, 1)
-        BZ:ScanNextPlayer()
-    end)
+    BZ.debugLog("|cff00ff00[BZ]|r Starting manual scan")
+    scanInProgress = true
+    BZ:GetPlayersInGroup()
 end
 
--- Start sequential achievement scanning
-function BZ:StartSequentialScan(achievementID)
-    BZ.playersToScan = {}
-    BZ.currentScanAchievementID = achievementID
-    BZ.scanCounter = BZ.scanCounter + 1
 
-    -- Get list of players to scan
-    local players = BZ:GetPlayersInGroup()
-    for _, playerName in ipairs(players) do
-        -- Check cache first
-        local cached = BZ:CheckPlayerCache(playerName, achievementID)
-        if cached == "unknown" then
-            table.insert(BZ.playersToScan, playerName)
-        elseif cached == "cross_realm_unknown" then
-            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Skipping %s - already marked as cross-realm unknown", playerName))
-        end
-    end
-
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Starting sequential scan for %d players", #BZ.playersToScan))
-
-    if #BZ.playersToScan > 0 then
-        BZ:ScanNextPlayer()
-    else
-        BZ.debugLog("|cff00ff00[BZ Debug]|r All players already cached, scan complete")
-        BZ:CompleteScan()
-    end
-end
-
--- Scan the next player in the queue
-function BZ:ScanNextPlayer()
-    if #BZ.playersToScan == 0 then
-        BZ.debugLog("|cff00ff00[BZ Debug]|r Sequential scan complete")
-        BZ:CompleteScan()
-        return
-    end
-
-    local playerName = BZ.playersToScan[1]
-    BZ.playerCurrentlyScanning = playerName
-
-    -- Find the unit for this player
-    local unit = BZ:FindUnitForPlayer(playerName)
-    if not unit then
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Could not find unit for %s, skipping", playerName))
-        table.remove(BZ.playersToScan, 1)
-        BZ.playerCurrentlyScanning = nil
-        BZ:ScanNextPlayer()
-        return
-    end
-
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Scanning %s (unit: %s)", playerName, unit))
-
-    -- Skip offline players
-    if not UnitIsConnected(unit) then
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r %s is offline, skipping", playerName))
-        table.remove(BZ.playersToScan, 1)
-        BZ.playerCurrentlyScanning = nil
-        BZ:ScanNextPlayer()
-        return
-    end
-
-    -- For player, handle immediately (no inspection needed)
-    if unit == "player" then
-        local _, _, _, playerCompleted = GetAchievementInfo(BZ.currentScanAchievementID)
-        local finalCompleted = playerCompleted or false  -- treat nil as not completed
-        BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, finalCompleted)
-
-        if playerCompleted == nil then
-            print(string.format("|cff00ff00[BZ CONFIRMED]|r %s (PLAYER) has NOT COMPLETED the achievement (no data)", playerName))
-        else
-            print(string.format("|cff00ff00[BZ CONFIRMED]|r %s (PLAYER) has %s the achievement", playerName, playerCompleted and "COMPLETED" or "NOT COMPLETED"))
-        end
-
-        -- Continue immediately
-        table.remove(BZ.playersToScan, 1)
-        BZ.playerCurrentlyScanning = nil
-        BZ:ScanNextPlayer()
-        return
-    end
-
-    -- For other players, request inspection and wait for INSPECT_ACHIEVEMENT_READY
-    SetAchievementComparisonUnit(unit)
-    if CanInspect(unit) then
-        NotifyInspect(unit)
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Requested inspection for %s", playerName))
-    end
-
-    -- Set timeout in case INSPECT_ACHIEVEMENT_READY never fires
-    C_Timer.After(5, function()
-        if BZ.playerCurrentlyScanning == playerName then
-            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Timeout waiting for INSPECT_ACHIEVEMENT_READY for %s", playerName))
-            -- Treat timeout as "not completed" and continue scanning
-            BZ:CachePlayerResult(playerName, BZ.currentScanAchievementID, false)
-            print(string.format("|cffffff00[BZ CONFIRMED]|r %s has NOT COMPLETED the achievement (timeout - no server response)", playerName))
-
-            BZ.playerCurrentlyScanning = nil
-            table.remove(BZ.playersToScan, 1)
-            BZ:ScanNextPlayer()
-        end
-    end)
-end
 
 -- Cache a player's achievement result
 function BZ:CachePlayerResult(playerName, achievementID, completed)
@@ -523,47 +606,7 @@ function BZ:CheckPlayerCache(playerName, achievementID)
     return "unknown"
 end
 
--- Get list of players in current group
-function BZ:GetPlayersInGroup()
-    local players = {}
-    local groupSize = BZ:GetGroupSize()
 
-    if groupSize > 1 then
-        local groupType = BZ:GetGroupType()
-
-        for i = 1, groupSize do
-            local unit
-            if groupType == "PARTY" then
-                if i < groupSize then
-                    unit = "party" .. i
-                else
-                    unit = "player"
-                end
-            elseif groupType == "RAID" then
-                unit = "raid" .. i
-            end
-
-            if unit then
-                local name, realm = UnitFullName(unit)
-                if name and name ~= "Unknown" then
-                    -- Use full name with realm for unique identification
-                    local fullName = realm and (name .. "-" .. realm) or name
-                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r GetPlayersInGroup: %s -> %s (realm: %s)", unit, fullName, tostring(realm)))
-                    table.insert(players, fullName)
-                end
-            end
-        end
-    else
-        -- Solo player
-        local name, realm = UnitFullName("player")
-        if name then
-            local fullName = realm and (name .. "-" .. realm) or name
-            table.insert(players, fullName)
-        end
-    end
-
-    return players
-end
 
 -- Check if a player has a specific achievement (simplified for sequential scanning)
 -- Returns: "completed", "not_completed", or "unknown"
@@ -669,93 +712,7 @@ function BZ:PrintGroupStatus(players, achievementID, achievementName)
     BZ.debugLog("|cff00ff00[BZ Debug]|r ===================================")
 end
 
--- Scan group members for active achievement
-function BZ:ScanGroupForActiveAchievement(scanType)
-    local activeID = BZ.db.settings.activeAchievementID
-    if not activeID then
-        BZ.debugLog("|cffff0000[BZ]|r No active achievement set for scanning")
-        return
-    end
 
-    if BZ.groupScanInProgress then
-        BZ.debugLog("|cffff0000[BZ]|r Group scan already in progress")
-        return
-    end
-
-    -- Start timing the scan
-    BZ.scanStartTime = GetTime()
-    BZ.groupScanInProgress = true
-    BZ.currentScanAchievementID = activeID
-    BZ.scanCounter = BZ.scanCounter + 1
-
-    local players = BZ:GetPlayersInGroup()
-    local achievementName = select(2, GetAchievementInfo(activeID)) or "Unknown Achievement"
-
-    -- Print comprehensive group status for debugging
-    BZ:PrintGroupStatus(players, activeID, achievementName)
-
-    -- Initialize scan results for this achievement
-    if not BZ.scanResults[activeID] then
-        BZ.scanResults[activeID] = {
-            completed = {},
-            notCompleted = {},
-            timestamp = GetTime(),
-            zone = GetZoneText()
-        }
-    end
-
-    local scanTypeText = scanType or "manual"
-    BZ.debugLog(string.format("|cff00ff00[BZ]|r %s scan: Starting sequential scan for achievement: %s", scanTypeText, achievementName))
-
-    -- Use sequential scanning approach
-    BZ:StartSequentialScan(activeID)
-end
-
--- Complete the group scan and display results
-function BZ:CompleteScan()
-    BZ.groupScanInProgress = false
-
-    -- Calculate scan duration
-    local scanDuration = BZ.scanStartTime and (GetTime() - BZ.scanStartTime) or 0
-    local durationText = string.format("%.2fs", scanDuration)
-
-    local achievementName = select(2, GetAchievementInfo(BZ.currentScanAchievementID)) or "Unknown Achievement"
-    local results = BZ.scanResults[BZ.currentScanAchievementID]
-
-    if not results then
-        BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan completed but no results found (took %s)", durationText))
-        return
-    end
-
-    local completedCount = #results.completed
-    local notCompletedCount = #results.notCompleted
-    local totalScanned = completedCount + notCompletedCount
-    local groupSize = BZ:GetGroupSize()
-    local unknownCount = groupSize - totalScanned
-
-    BZ.debugLog(string.format("|cff00ff00[BZ]|r Scan complete: %d completed, %d not completed, %d unknown, %d total for %s (took %s)", completedCount, notCompletedCount, unknownCount, groupSize, achievementName, durationText))
-
-    if notCompletedCount > 0 then
-        BZ.debugLog("|cff00ff00[BZ]|r Players not completed the achievement:")
-        for _, playerName in ipairs(results.notCompleted) do
-            BZ.debugLog(string.format("  - %s", playerName))
-        end
-    else
-        BZ.debugLog("|cff00ff00[BZ]|r All scanned players have the achievement!")
-    end
-
-    -- Explain unknown players if there are many
-    if unknownCount > 0 then
-        if unknownCount == groupSize then
-            BZ.debugLog("|cffff8000[BZ]|r Note: Could not scan any players. This usually happens with cross-realm groups or when players are out of range.")
-        elseif unknownCount > groupSize / 2 then
-            BZ.debugLog(string.format("|cffff8000[BZ]|r Note: %d players could not be scanned (likely cross-realm or out of range)", unknownCount))
-        end
-    end
-
-    -- Update display frame to show scan results
-    BZ:UpdateDisplayFrame()
-end
 
 -- Get the current scan results for the active achievement
 function BZ:GetActiveScanResults()
@@ -792,55 +749,7 @@ end
 
 
 
--- Start periodic scanning
-function BZ:StartPeriodicScanning()
-    if BZ.periodicScanTimer then
-        BZ.periodicScanTimer:Cancel()
-    end
 
-    BZ.periodicScanTimer = C_Timer.NewTicker(10, function()
-        BZ:PeriodicScanCheck()
-    end)
-
-    BZ.debugLog("|cff00ff00[BZ Debug]|r Started periodic scanning (every 10 seconds)")
-end
-
--- Stop periodic scanning
-function BZ:StopPeriodicScanning()
-    if BZ.periodicScanTimer then
-        BZ.periodicScanTimer:Cancel()
-        BZ.periodicScanTimer = nil
-        BZ.debugLog("|cff00ff00[BZ Debug]|r Stopped periodic scanning")
-    end
-end
-
--- Check if we should perform a periodic scan
-function BZ:PeriodicScanCheck()
-    -- Only scan if we have an active achievement
-    if not BZ.db.settings.activeAchievementID then
-        return
-    end
-
-    -- Only scan if we're in a group
-    if BZ:GetGroupSize() <= 1 then
-        return
-    end
-
-    -- Don't scan if in combat
-    if InCombatLockdown() then
-        BZ.debugLog("|cff00ff00[BZ Debug]|r Skipping periodic scan: in combat")
-        return
-    end
-
-    -- Don't scan if already scanning
-    if BZ.groupScanInProgress then
-        BZ.debugLog("|cff00ff00[BZ Debug]|r Skipping periodic scan: scan already in progress")
-        return
-    end
-
-    BZ.debugLog("|cff00ff00[BZ Debug]|r Performing periodic scan...")
-    BZ:ScanGroupForActiveAchievement("periodic")
-end
 
 -- Clear scan results (call this when leaving instance)
 function BZ:ClearScanResults()
@@ -902,11 +811,6 @@ function BZ:SetActiveAchievement(achievementID)
     end
 
     BZ.debugLog(string.format("|cff00ff00[BZ]|r Set active achievement: [%d] %s", achievementID, achievementName))
-
-    -- Start periodic scanning if in a group
-    if BZ:GetGroupSize() > 1 then
-        BZ:StartPeriodicScanning()
-    end
 
     BZ:UpdateDisplayFrame()
 end
