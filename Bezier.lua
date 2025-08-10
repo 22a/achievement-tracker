@@ -201,10 +201,42 @@ function BZ:OnEvent(event, ...)
     elseif event == "CHAT_MSG_SYSTEM" then
         -- IAT: Used to detect when players join/leave group
         local message = ...
-        local chatStrs = {"joins the party", "joined the instance group", "joined the raid group", "joined a raid group", "leaves the party", "left the instance group", "leaves the party", "left the raid group"}
-        for i = 1, #chatStrs do
-            if string.match(message, chatStrs[i]) then
-                BZ.debugLog("|cff00ff00[BZ Debug]|r CHAT_MSG_SYSTEM: " .. message)
+        local joinStrs = {"joins the party", "joined the instance group", "joined the raid group", "joined a raid group"}
+        local leaveStrs = {"leaves the party", "left the instance group", "left the raid group"}
+
+        -- Check for join messages
+        for i = 1, #joinStrs do
+            if string.match(message, joinStrs[i]) then
+                BZ.debugLog("|cff00ff00[BZ Debug]|r CHAT_MSG_SYSTEM (JOIN): " .. message)
+
+                if scanInProgress == false then
+                    -- No scan in progress - start new scan immediately
+                    BZ.debugLog("|cff00ff00[BZ Debug]|r Starting Scan")
+                    scanInProgress = true
+                    BZ:GetPlayersInGroup()
+                else
+                    -- Scan already in progress - defer rescan until current scan completes
+                    BZ.debugLog("|cff00ff00[BZ Debug]|r Scan in progress. Asking for rescan")
+                    rescanNeeded = true
+                end
+                break
+            end
+        end
+
+        -- Check for leave messages and extract player name
+        for i = 1, #leaveStrs do
+            if string.match(message, leaveStrs[i]) then
+                BZ.debugLog("|cff00ff00[BZ Debug]|r CHAT_MSG_SYSTEM (LEAVE): " .. message)
+
+                -- Extract player name from leave message
+                -- Messages are typically: "PlayerName leaves the party." or "PlayerName left the raid group."
+                local playerName = string.match(message, "^([^%s]+)")
+                if playerName then
+                    -- Normalize the player name (strip realm if present)
+                    local normalizedName = BZ:NormalizePlayerName(playerName)
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player %s (normalized: %s) left the group, removing from cache", playerName, normalizedName))
+                    BZ:RemovePlayerFromCache(normalizedName)
+                end
 
                 if scanInProgress == false then
                     -- No scan in progress - start new scan immediately
@@ -619,6 +651,50 @@ function BZ:CachePlayerAsUnknown(playerName, achievementID)
 
     table.insert(BZ.scanResults[achievementID].unknown, playerName)
     BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cached %s as unknown (cross-realm)", playerName))
+end
+
+-- Remove a player from all cached achievement data
+function BZ:RemovePlayerFromCache(playerName)
+    local removedCount = 0
+
+    for achievementID, results in pairs(BZ.scanResults) do
+        -- Remove from completed list
+        for i = #results.completed, 1, -1 do
+            if results.completed[i] == playerName then
+                table.remove(results.completed, i)
+                removedCount = removedCount + 1
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Removed %s from completed list for achievement %d", playerName, achievementID))
+            end
+        end
+
+        -- Remove from notCompleted list
+        for i = #results.notCompleted, 1, -1 do
+            if results.notCompleted[i] == playerName then
+                table.remove(results.notCompleted, i)
+                removedCount = removedCount + 1
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Removed %s from notCompleted list for achievement %d", playerName, achievementID))
+            end
+        end
+
+        -- Remove from unknown list
+        for i = #results.unknown, 1, -1 do
+            if results.unknown[i] == playerName then
+                table.remove(results.unknown, i)
+                removedCount = removedCount + 1
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Removed %s from unknown list for achievement %d", playerName, achievementID))
+            end
+        end
+    end
+
+    if removedCount > 0 then
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Removed %s from %d cached entries total", playerName, removedCount))
+        -- Update display frame to reflect changes
+        BZ:UpdateDisplayFrame()
+        -- Update settings panel if it's open
+        if UpdateScanResultsDisplay then
+            UpdateScanResultsDisplay()
+        end
+    end
 end
 
 -- Find unit for a player name
