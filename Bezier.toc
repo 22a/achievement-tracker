@@ -1,8 +1,8 @@
 ## Interface: 110107
 ## Title: Bezier
-## Notes: Tracks achievements earned for the first time by party/raid members
+## Notes: Tracks achievements earned for the first time by raid members
 ## Author: 22a
-## Version: 0.3.20
+## Version: 0.4.0
 ## SavedVariables: BezierDB
 ## DefaultState: enabled
 ## X-Category: Achievements

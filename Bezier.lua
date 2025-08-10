@@ -182,21 +182,26 @@ function BZ:OnEvent(event, ...)
             BZ:RecordAchievement(playerName, achievementID, achievementName)
         end
     elseif event == "GROUP_ROSTER_UPDATE" then
-        -- IAT: Fired whenever the composition of the group changes
+        -- IAT: Fired whenever the composition of the raid changes
         BZ.debugLog("|cff00ff00[BZ Debug]|r Group Roster Update")
 
-        -- Clean up cache for players who left the group
+        -- Clean up cache for players who left the raid
         BZ:CleanupCacheForLeavingPlayers()
 
-        if scanInProgress == false then
-            -- No scan in progress - start new scan immediately
-            BZ.debugLog("|cff00ff00[BZ Debug]|r Starting Scan")
-            scanInProgress = true
-            BZ:GetPlayersInGroup()
+        -- Only scan if in raid
+        if IsInRaid() then
+            if scanInProgress == false then
+                -- No scan in progress - start new scan immediately
+                BZ.debugLog("|cff00ff00[BZ Debug]|r Starting Scan")
+                scanInProgress = true
+                BZ:GetPlayersInGroup()
+            else
+                -- Scan already in progress - defer rescan until current scan completes
+                BZ.debugLog("|cff00ff00[BZ Debug]|r Scan in progress. Asking for rescan")
+                rescanNeeded = true
+            end
         else
-            -- Scan already in progress - defer rescan until current scan completes
-            BZ.debugLog("|cff00ff00[BZ Debug]|r Scan in progress. Asking for rescan")
-            rescanNeeded = true
+            BZ.debugLog("|cff00ff00[BZ Debug]|r Not in raid, skipping scan")
         end
 
         -- Update display frame
@@ -213,12 +218,11 @@ function BZ:OnEvent(event, ...)
 
         BZ.debugLog("|cff00ff00[BZ Debug]|r Player entering world")
 
-        -- Trigger automatic scan if in a group/raid and have active achievement
-        local groupSize = BZ:GetGroupSize()
-        if groupSize > 1 and BZ.db.settings.activeAchievementID then
-            BZ.debugLog("|cff00ff00[BZ Debug]|r In group on login/reload, starting automatic scan")
+        -- Trigger automatic scan if in a raid and have active achievement
+        if IsInRaid() and BZ.db.settings.activeAchievementID then
+            BZ.debugLog("|cff00ff00[BZ Debug]|r In raid on login/reload, starting automatic scan")
             C_Timer.After(2, function() -- Small delay to ensure group data is loaded
-                if not scanInProgress then
+                if not scanInProgress and IsInRaid() then
                     scanInProgress = true
                     BZ:GetPlayersInGroup()
                 end
@@ -269,10 +273,18 @@ function BZ:ResetScanningVariables()
     scanAnnounced = false
 end
 
--- IAT: Get list of players in current group
+-- IAT: Get list of players in current raid
 function BZ:GetPlayersInGroup()
     if not BZ.db.settings.activeAchievementID then
         BZ.debugLog("|cff00ff00[BZ Debug]|r No active achievement set, skipping scan")
+        return
+    end
+
+    -- Only work in raids
+    if not IsInRaid() then
+        BZ.debugLog("|cff00ff00[BZ Debug]|r Not in raid, skipping scan")
+        scanInProgress = false
+        BZ.scanFinished = true
         return
     end
 
@@ -282,39 +294,16 @@ function BZ:GetPlayersInGroup()
         scanAnnounced = true
     end
 
-    local groupSize = BZ:GetGroupSize()
+    local groupSize = GetNumGroupMembers()
     scanInProgress = true
     BZ.scanFinished = false
 
-    if groupSize > 1 then
-        -- We are in a group
-        local groupType = BZ:GetGroupType()
-        for i = 1, groupSize do
-            local unit
-            if groupType == "PARTY" then
-                if i < groupSize then
-                    unit = "party" .. i
-                else
-                    unit = "player"
-                end
-            elseif groupType == "RAID" then
-                unit = "raid" .. i
-            end
-
-            local name, realm = UnitName(unit)
-            if name and name ~= "Unknown" then
-                -- Use simple name for IAT compatibility
-                local playerName = name
-                if BZ:has_value(playersScanned, playerName) == false and
-                   BZ:has_value(playersToScan, playerName) == false then
-                    table.insert(playersToScan, playerName)
-                end
-            end
-        end
-    else
-        -- Solo player
-        local name, realm = UnitName("player")
-        if name then
+    -- Scan all raid members
+    for i = 1, groupSize do
+        local unit = "raid" .. i
+        local name, realm = UnitName(unit)
+        if name and name ~= "Unknown" then
+            -- Use simple name for IAT compatibility
             local playerName = name
             if BZ:has_value(playersScanned, playerName) == false and
                BZ:has_value(playersToScan, playerName) == false then
@@ -444,9 +433,9 @@ function BZ:ProcessInspectAchievementReady(guid)
                 if #playersToScan > 0 then
                     -- More players to scan
                     BZ:GetInstanceAchievements()
-                elseif #playersToScan == 0 and rescanNeeded == false and #playersScanned == BZ:GetGroupSize() then
+                elseif #playersToScan == 0 and rescanNeeded == false and #playersScanned == BZ:GetRaidSize() then
                     -- Perfect completion - all players scanned successfully
-                    BZ.debugLog(string.format("|cff00ff00[Bezier]|r Achievement scan finished (%d/%d)", #playersScanned, BZ:GetGroupSize()))
+                    BZ.debugLog(string.format("|cff00ff00[Bezier]|r Achievement scan finished (%d/%d)", #playersScanned, BZ:GetRaidSize()))
                     scanInProgress = false
                     BZ.scanFinished = true
 
@@ -498,32 +487,30 @@ function BZ:ProcessInspectAchievementReady(guid)
     end
 end
 
--- Get current group size
-function BZ:GetGroupSize()
-    local size = GetNumGroupMembers()
-    if size == 0 then
-        return 1 -- Solo player
-    else
-        return size
-    end
-end
-
--- Get group type for chat messages
-function BZ:GetGroupType()
+-- Get current raid size (returns 0 if not in raid)
+function BZ:GetRaidSize()
     if IsInRaid() then
-        return "RAID"
-    elseif IsInGroup() then
-        return "PARTY"
+        return GetNumGroupMembers()
     else
-        return "SAY"
+        return 0
     end
 end
 
--- Simple trigger function for manual scans
+-- Check if in raid
+function BZ:IsInRaid()
+    return IsInRaid()
+end
+
+-- Simple trigger function for manual raid scans
 function BZ:ScanGroupForActiveAchievement()
     local activeID = BZ.db.settings.activeAchievementID
     if not activeID then
         BZ.debugLog("|cffff0000[BZ]|r No active achievement set for scanning")
+        return
+    end
+
+    if not IsInRaid() then
+        BZ.debugLog("|cffff0000[BZ]|r Not in raid - addon only works in raids")
         return
     end
 
@@ -532,7 +519,7 @@ function BZ:ScanGroupForActiveAchievement()
         return
     end
 
-    BZ.debugLog("|cff00ff00[BZ]|r Starting manual scan")
+    BZ.debugLog("|cff00ff00[BZ]|r Starting manual raid scan")
     scanInProgress = true
     BZ:GetPlayersInGroup()
 
@@ -648,42 +635,32 @@ function BZ:RemovePlayerFromCache(playerName)
     end
 end
 
--- Clean up cache for players who are no longer in the group
+-- Clean up cache for players who are no longer in the raid
 function BZ:CleanupCacheForLeavingPlayers()
-    -- Get current group members
-    local currentPlayers = {}
-    local groupSize = BZ:GetGroupSize()
-
-    if groupSize > 1 then
-        local groupType = BZ:GetGroupType()
-        for i = 1, groupSize do
-            local unit
-            if groupType == "PARTY" then
-                if i < groupSize then
-                    unit = "party" .. i
-                else
-                    unit = "player"
-                end
-            elseif groupType == "RAID" then
-                unit = "raid" .. i
-            end
-
-            local name, realm = UnitName(unit)
-            if name and name ~= "Unknown" then
-                local normalizedName = BZ:NormalizePlayerName(name)
-                currentPlayers[normalizedName] = true
-            end
+    -- Only work in raids
+    if not IsInRaid() then
+        -- If not in raid, clear all cache since addon only works in raids
+        if next(BZ.scanResults) then
+            BZ.debugLog("|cff00ff00[BZ Debug]|r Not in raid, clearing all cached data")
+            BZ:ClearScanResults()
         end
-    else
-        -- Solo player
-        local name, realm = UnitName("player")
-        if name then
+        return
+    end
+
+    -- Get current raid members
+    local currentPlayers = {}
+    local raidSize = GetNumGroupMembers()
+
+    for i = 1, raidSize do
+        local unit = "raid" .. i
+        local name, realm = UnitName(unit)
+        if name and name ~= "Unknown" then
             local normalizedName = BZ:NormalizePlayerName(name)
             currentPlayers[normalizedName] = true
         end
     end
 
-    -- Check cached players against current group members
+    -- Check cached players against current raid members
     local playersToRemove = {}
     for achievementID, results in pairs(BZ.scanResults) do
         -- Check completed players
@@ -710,47 +687,27 @@ function BZ:CleanupCacheForLeavingPlayers()
 
     -- Remove players who left
     for playerName, _ in pairs(playersToRemove) do
-        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player %s left the group, removing from cache", playerName))
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player %s left the raid, removing from cache", playerName))
         BZ:RemovePlayerFromCache(playerName)
     end
 end
 
--- Find unit for a player name
+-- Find unit for a player name in raid
 function BZ:FindUnitForPlayer(playerName)
-    local groupSize = BZ:GetGroupSize()
+    if not IsInRaid() then
+        return nil
+    end
 
-    if groupSize > 1 then
-        local groupType = BZ:GetGroupType()
-
-        for i = 1, groupSize do
-            local unit
-            if groupType == "PARTY" then
-                if i < groupSize then
-                    unit = "party" .. i
-                else
-                    unit = "player"
+    local raidSize = GetNumGroupMembers()
+    for i = 1, raidSize do
+        local unit = "raid" .. i
+        if UnitExists(unit) then
+            local name, realm = UnitFullName(unit)
+            if name then
+                local fullName = realm and (name .. "-" .. realm) or name
+                if fullName == playerName then
+                    return unit
                 end
-            elseif groupType == "RAID" then
-                unit = "raid" .. i
-            end
-
-            if unit and UnitExists(unit) then
-                local name, realm = UnitFullName(unit)
-                if name then
-                    local fullName = realm and (name .. "-" .. realm) or name
-                    if fullName == playerName then
-                        return unit
-                    end
-                end
-            end
-        end
-    else
-        -- Solo player
-        local name, realm = UnitFullName("player")
-        if name then
-            local fullName = realm and (name .. "-" .. realm) or name
-            if fullName == playerName then
-                return "player"
             end
         end
     end
@@ -801,12 +758,12 @@ function BZ:PlayerHasAchievement(playerName, achievementID)
 end
 
 
--- Print comprehensive group status for debugging
+-- Print comprehensive raid status for debugging
 function BZ:PrintGroupStatus(players, achievementID, achievementName)
-    BZ.debugLog("|cff00ff00[BZ Debug]|r ========== GROUP STATUS ==========")
+    BZ.debugLog("|cff00ff00[BZ Debug]|r ========== RAID STATUS ==========")
     BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Achievement: %s (ID: %s)", achievementName, tostring(achievementID)))
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Group Size: %d", #players))
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Group Type: %s", IsInRaid() and "RAID" or (IsInGroup() and "PARTY" or "SOLO")))
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Raid Size: %d", #players))
+    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r In Raid: %s", IsInRaid() and "YES" or "NO"))
     BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Zone: %s", GetZoneText()))
 
     -- Show each player and their unit mapping
@@ -1228,16 +1185,16 @@ function BZ:CreateSettingsPanel()
     -- TAB 2: SCAN RESULTS
     local scanTab = tabFrames[2]
 
-    -- Group Scanning Section
+    -- Raid Scanning Section
     local groupLabel = scanTab:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     groupLabel:SetPoint("TOPLEFT", 10, -10)
-    groupLabel:SetText("Group Achievement Scanning:")
+    groupLabel:SetText("Raid Achievement Scanning:")
 
-    -- Scan Group button
+    -- Scan Raid button
     local scanButton = CreateFrame("Button", nil, scanTab, "UIPanelButtonTemplate")
     scanButton:SetSize(120, 22)
     scanButton:SetPoint("TOPLEFT", groupLabel, "BOTTOMLEFT", 0, -5)
-    scanButton:SetText("Scan Group")
+    scanButton:SetText("Scan Raid")
     scanButton:SetScript("OnClick", function()
         BZ:ScanGroupForActiveAchievement()
     end)
@@ -1254,7 +1211,7 @@ function BZ:CreateSettingsPanel()
     -- Scanning limitation note
     local scanNote = scanTab:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     scanNote:SetPoint("TOPLEFT", scanButton, "BOTTOMLEFT", 0, -5)
-    scanNote:SetText("Note: Only works reliably for same-realm players in range")
+    scanNote:SetText("Note: Only works in raids, for same-realm players in range")
     scanNote:SetTextColor(0.8, 0.8, 0.8)
 
     -- Scanned Members Table
@@ -1713,8 +1670,7 @@ function BZ:UpdateDisplayFrame()
         return
     end
 
-    local groupSize = BZ:GetGroupSize()
-    local inGroup = groupSize > 1
+    local inRaid = IsInRaid()
 
     -- Update font size - use same configurable size for both lines
     local fontSize = BZ.db.settings.displayFrame.fontSize or 12
@@ -1731,7 +1687,7 @@ function BZ:UpdateDisplayFrame()
 
     local showSpinner = false
 
-    if inGroup then
+    if inRaid then
         -- Check if we have scan results
         local results = BZ.scanResults[activeID]
 
@@ -1750,11 +1706,11 @@ function BZ:UpdateDisplayFrame()
             -- No scan results yet
             local incomingPrefix = BZ.db.settings.displayFrame.incomingPrefix or DEFAULT_INCOMING_PREFIX
             line2Text = string.format("%s: ?", incomingPrefix)
-            -- Show spinner if scan is in progress or no results yet (unless we're solo)
-            showSpinner = scanInProgress or (groupSize > 1 and not BZ.scanFinished)
+            -- Show spinner if scan is in progress or no results yet
+            showSpinner = scanInProgress or (inRaid and not BZ.scanFinished)
         end
     else
-        -- Solo player - no second line needed
+        -- Not in raid - no second line needed
         line2Text = ""
         showSpinner = false
     end
