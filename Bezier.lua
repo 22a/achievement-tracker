@@ -309,8 +309,11 @@ function BZ:ScanPlayersInGroup()
         if name and name ~= "Unknown" then
             -- Use simple name for compatibility
             local playerName = name
-            table.insert(playersToScan, playerName)
-            BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Added %s to scan queue", playerName))
+            -- Only add if not already in queue (deduplication)
+            if not BZ:has_value(playersToScan, playerName) then
+                table.insert(playersToScan, playerName)
+                BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Added %s to scan queue", playerName))
+            end
         end
     end
 
@@ -572,9 +575,15 @@ function BZ:CachePlayerResult(playerName, achievementID, completed)
     end
 
     if completed then
-        table.insert(BZ.scanResults[achievementID].completed, playerName)
+        -- Only add if not already in completed list
+        if not BZ:has_value(BZ.scanResults[achievementID].completed, playerName) then
+            table.insert(BZ.scanResults[achievementID].completed, playerName)
+        end
     else
-        table.insert(BZ.scanResults[achievementID].notCompleted, playerName)
+        -- Only add if not already in notCompleted list
+        if not BZ:has_value(BZ.scanResults[achievementID].notCompleted, playerName) then
+            table.insert(BZ.scanResults[achievementID].notCompleted, playerName)
+        end
     end
 end
 
@@ -590,8 +599,11 @@ function BZ:CachePlayerAsUnknown(playerName, achievementID)
         }
     end
 
-    table.insert(BZ.scanResults[achievementID].unknown, playerName)
-    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cached %s as unknown (cross-realm)", playerName))
+    -- Only add if not already in unknown list
+    if not BZ:has_value(BZ.scanResults[achievementID].unknown, playerName) then
+        table.insert(BZ.scanResults[achievementID].unknown, playerName)
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Cached %s as unknown (cross-realm)", playerName))
+    end
 end
 
 -- Remove a player from all cached achievement data
