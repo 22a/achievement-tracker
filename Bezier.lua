@@ -38,14 +38,14 @@ BZ.currentScanAchievementID = nil -- Achievement ID being scanned
 local defaultDB = {
     achievements = {
         [41298] = 0, -- Ahead of the Curve: Chrome King Gallywix
-    }, -- [achievementID] = count (simple counter)
+        [41624] = 0, -- Ahead of the Curve: Dimensius, the All-Devouring
+    }, -- [achievementID] = count
     settings = {
         enableDebugLogging = false,
-        activeAchievementID = 41298, -- Ahead of the Curve: Chrome King Gallywix
+        activeAchievementID = 41624, -- Ahead of the Curve: Dimensius, the All-Devouring
         displayFrame = {
             x = 100,
             y = -100,
-            visible = true,
             displayPrefix = DEFAULT_PREFIX, -- Customizable prefix for display
             incomingPrefix = DEFAULT_INCOMING_PREFIX, -- Customizable prefix for incoming count
             fontSize = 12, -- Font size for display frame
@@ -405,10 +405,10 @@ function BZ:ProcessInspectAchievementReady(guid)
                 -- Check achievement completion status with proper player self-scanning
                 local completed
                 if BZ.currentComparisonUnit == UnitName("player") then
-                    -- For player themselves, use GetAchievementInfo and check wasEarnedByMe
-                    local _, _, _, completedFlag, _, _, _, _, _, _, _, _, wasEarnedByMe = GetAchievementInfo(BZ.db.settings.activeAchievementID)
-                    completed = wasEarnedByMe
-                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player self-scan: wasEarnedByMe=%s", tostring(wasEarnedByMe)))
+                    -- For player themselves, use GetAchievementInfo
+                    local _, _, _, completedFlag, _, _, _, _, _, _, _, _, _ = GetAchievementInfo(BZ.db.settings.activeAchievementID)
+                    completed = completedFlag
+                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player self-scan: wasEarnedByMe=%s", tostring(completedFlag)))
                 else
                     -- For other players, use GetAchievementComparisonInfo
                     local completedFlag, month, day, year = GetAchievementComparisonInfo(BZ.db.settings.activeAchievementID)
@@ -1427,11 +1427,11 @@ function BZ:CreateSettingsPanel()
 
         local activeHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         activeHeader:SetPoint("LEFT", 330, 0)
-        activeHeader:SetText("Active")
+        activeHeader:SetText("Active?")
 
         local deleteHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         deleteHeader:SetPoint("LEFT", 420, 0)
-        deleteHeader:SetText("Delete")
+        deleteHeader:SetText("Delete?")
 
         yOffset = yOffset + 25
 
@@ -1464,8 +1464,8 @@ function BZ:CreateSettingsPanel()
             nameText:SetPoint("LEFT", 50, 0)
             nameText:SetSize(220, 20)
             nameText:SetJustifyH("LEFT")
-            if string.len(achievementName) > 30 then
-                nameText:SetText(string.sub(achievementName, 1, 27) .. "...")
+            if string.len(achievementName) > 40 then
+                nameText:SetText(string.sub(achievementName, 1, 37) .. "...")
             else
                 nameText:SetText(achievementName)
             end
