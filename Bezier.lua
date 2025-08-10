@@ -1464,11 +1464,7 @@ function BZ:CreateSettingsPanel()
             nameText:SetPoint("LEFT", 50, 0)
             nameText:SetSize(220, 20)
             nameText:SetJustifyH("LEFT")
-            if string.len(achievementName) > 40 then
-                nameText:SetText(string.sub(achievementName, 1, 37) .. "...")
-            else
-                nameText:SetText(achievementName)
-            end
+            nameText:SetText(achievementName)
 
             -- Count
             local countText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
