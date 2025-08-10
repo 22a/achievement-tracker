@@ -13,7 +13,7 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("CHAT_MSG_ACHIEVEMENT")
 frame:RegisterEvent("GROUP_ROSTER_UPDATE")
-frame:RegisterEvent("CHAT_MSG_SYSTEM")  -- IAT: Used to detect when players join/leave group
+
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_LEAVING_WORLD")
 frame:RegisterEvent("INSPECT_ACHIEVEMENT_READY")
@@ -185,6 +185,9 @@ function BZ:OnEvent(event, ...)
         -- IAT: Fired whenever the composition of the group changes
         BZ.debugLog("|cff00ff00[BZ Debug]|r Group Roster Update")
 
+        -- Clean up cache for players who left the group
+        BZ:CleanupCacheForLeavingPlayers()
+
         if scanInProgress == false then
             -- No scan in progress - start new scan immediately
             BZ.debugLog("|cff00ff00[BZ Debug]|r Starting Scan")
@@ -198,59 +201,7 @@ function BZ:OnEvent(event, ...)
 
         -- Update display frame
         BZ:UpdateDisplayFrame()
-    elseif event == "CHAT_MSG_SYSTEM" then
-        -- IAT: Used to detect when players join/leave group
-        local message = ...
-        local joinStrs = {"joins the party", "joined the instance group", "joined the raid group", "joined a raid group"}
-        local leaveStrs = {"leaves the party", "left the instance group", "left the raid group"}
 
-        -- Check for join messages
-        for i = 1, #joinStrs do
-            if string.match(message, joinStrs[i]) then
-                BZ.debugLog("|cff00ff00[BZ Debug]|r CHAT_MSG_SYSTEM (JOIN): " .. message)
-
-                if scanInProgress == false then
-                    -- No scan in progress - start new scan immediately
-                    BZ.debugLog("|cff00ff00[BZ Debug]|r Starting Scan")
-                    scanInProgress = true
-                    BZ:GetPlayersInGroup()
-                else
-                    -- Scan already in progress - defer rescan until current scan completes
-                    BZ.debugLog("|cff00ff00[BZ Debug]|r Scan in progress. Asking for rescan")
-                    rescanNeeded = true
-                end
-                break
-            end
-        end
-
-        -- Check for leave messages and extract player name
-        for i = 1, #leaveStrs do
-            if string.match(message, leaveStrs[i]) then
-                BZ.debugLog("|cff00ff00[BZ Debug]|r CHAT_MSG_SYSTEM (LEAVE): " .. message)
-
-                -- Extract player name from leave message
-                -- Messages are typically: "PlayerName leaves the party." or "PlayerName left the raid group."
-                local playerName = string.match(message, "^([^%s]+)")
-                if playerName then
-                    -- Normalize the player name (strip realm if present)
-                    local normalizedName = BZ:NormalizePlayerName(playerName)
-                    BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player %s (normalized: %s) left the group, removing from cache", playerName, normalizedName))
-                    BZ:RemovePlayerFromCache(normalizedName)
-                end
-
-                if scanInProgress == false then
-                    -- No scan in progress - start new scan immediately
-                    BZ.debugLog("|cff00ff00[BZ Debug]|r Starting Scan")
-                    scanInProgress = true
-                    BZ:GetPlayersInGroup()
-                else
-                    -- Scan already in progress - defer rescan until current scan completes
-                    BZ.debugLog("|cff00ff00[BZ Debug]|r Scan in progress. Asking for rescan")
-                    rescanNeeded = true
-                end
-                break
-            end
-        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Player entered world, check if we changed zones and clear cache if needed
         local newZone = GetZoneText()
@@ -694,6 +645,73 @@ function BZ:RemovePlayerFromCache(playerName)
         if UpdateScanResultsDisplay then
             UpdateScanResultsDisplay()
         end
+    end
+end
+
+-- Clean up cache for players who are no longer in the group
+function BZ:CleanupCacheForLeavingPlayers()
+    -- Get current group members
+    local currentPlayers = {}
+    local groupSize = BZ:GetGroupSize()
+
+    if groupSize > 1 then
+        local groupType = BZ:GetGroupType()
+        for i = 1, groupSize do
+            local unit
+            if groupType == "PARTY" then
+                if i < groupSize then
+                    unit = "party" .. i
+                else
+                    unit = "player"
+                end
+            elseif groupType == "RAID" then
+                unit = "raid" .. i
+            end
+
+            local name, realm = UnitName(unit)
+            if name and name ~= "Unknown" then
+                local normalizedName = BZ:NormalizePlayerName(name)
+                currentPlayers[normalizedName] = true
+            end
+        end
+    else
+        -- Solo player
+        local name, realm = UnitName("player")
+        if name then
+            local normalizedName = BZ:NormalizePlayerName(name)
+            currentPlayers[normalizedName] = true
+        end
+    end
+
+    -- Check cached players against current group members
+    local playersToRemove = {}
+    for achievementID, results in pairs(BZ.scanResults) do
+        -- Check completed players
+        for _, playerName in ipairs(results.completed or {}) do
+            if not currentPlayers[playerName] then
+                playersToRemove[playerName] = true
+            end
+        end
+
+        -- Check notCompleted players
+        for _, playerName in ipairs(results.notCompleted or {}) do
+            if not currentPlayers[playerName] then
+                playersToRemove[playerName] = true
+            end
+        end
+
+        -- Check unknown players
+        for _, playerName in ipairs(results.unknown or {}) do
+            if not currentPlayers[playerName] then
+                playersToRemove[playerName] = true
+            end
+        end
+    end
+
+    -- Remove players who left
+    for playerName, _ in pairs(playersToRemove) do
+        BZ.debugLog(string.format("|cff00ff00[BZ Debug]|r Player %s left the group, removing from cache", playerName))
+        BZ:RemovePlayerFromCache(playerName)
     end
 end
 

@@ -18,7 +18,6 @@ graph TD
     E --> F{Event Received}
     F -->|CHAT_MSG_ACHIEVEMENT| G[Parse Achievement Message]
     F -->|GROUP_ROSTER_UPDATE| H[Group Changed]
-    F -->|CHAT_MSG_SYSTEM| I[Player Join/Leave]
     F -->|PLAYER_ENTERING_WORLD| J[Zone Change Check]
     F -->|INSPECT_ACHIEVEMENT_READY| K[Achievement Data Ready]
 
@@ -31,7 +30,6 @@ graph TD
 
     %% Scanning System
     H --> Q{Scan in Progress?}
-    I --> Q
     Q -->|No| R[Start New Scan]
     Q -->|Yes| S[Mark Rescan Needed]
 
@@ -74,6 +72,9 @@ graph TD
     QQ --> RR[completed Array]
     QQ --> SS[notCompleted Array]
     QQ --> TT[unknown Array]
+
+    %% Player Leave Handling
+    H --> WW[Cleanup Cache]
 
     %% Zone Change Handling
     J --> UU{Zone Changed?}
@@ -133,8 +134,7 @@ graph TD
 ### Event-Driven System
 The addon responds to key WoW events:
 - `CHAT_MSG_ACHIEVEMENT`: Achievement announcements in chat
-- `GROUP_ROSTER_UPDATE`: Group composition changes
-- `CHAT_MSG_SYSTEM`: Player join/leave messages
+- `GROUP_ROSTER_UPDATE`: Group composition changes (handles both joins and leaves)
 - `PLAYER_ENTERING_WORLD`: Zone transitions and login
 - `INSPECT_ACHIEVEMENT_READY`: Achievement inspection data ready
 
@@ -150,6 +150,7 @@ Maintains scan results to optimize performance:
 - `scanResults[achievementID]` contains completion status arrays
 - Three categories: `completed`, `notCompleted`, `unknown`
 - Zone-aware cache clearing when changing instances
+- Automatic cleanup when players leave the group
 - Persistent across group changes within same zone
 
 ### Conservative Counting Logic
